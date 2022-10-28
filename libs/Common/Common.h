@@ -256,6 +256,9 @@ typedef Matrix3x4   PMatrix;
 typedef Vec3 X3D;
 typedef SEACAVE::cList<X3D, const X3D&, 0, 8192> X3DArr;
 
+// sparse constraints
+typedef std::map<unsigned int, std::vector<std::pair<Point3f, Point3f> > > SparseConstraints;
+
 typedef SEACAVE::cList<uint32_t, uint32_t, 0> IndexArr;
 
 typedef CLISTDEF0(REAL) REALArr;

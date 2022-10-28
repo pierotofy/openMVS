@@ -67,6 +67,7 @@ unsigned nMaxThreads;
 int mockCudaDevice;
 String strConfigFileName;
 boost::program_options::variables_map vm;
+String strSparseContraintsFilename;
 } // namespace OPT
 
 // initialize and parse the command line parameters
@@ -142,8 +143,9 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 		("fusion-mode", boost::program_options::value(&OPT::nFusionMode)->default_value(0), "depth map fusion mode (-2 - fuse disparity-maps, -1 - export disparity-maps only, 0 - depth-maps & fusion, 1 - export depth-maps only)")
 		("filter-point-cloud", boost::program_options::value(&OPT::thFilterPointCloud)->default_value(0), "filter dense point-cloud based on visibility (0 - disabled)")
 		("export-number-views", boost::program_options::value(&OPT::nExportNumViews)->default_value(0), "export points with >= number of views (0 - disabled, <0 - save MVS project too)")
-        ("estimate-roi", boost::program_options::value(&OPT::nEstimateROI)->default_value(2), "estimate and set region-of-interest (0 - disabled, 1 - enabled, 2 - adaptive)")
-        ;
+		("estimate-roi", boost::program_options::value(&OPT::nEstimateROI)->default_value(2), "estimate and set region-of-interest (0 - disabled, 1 - enabled, 2 - adaptive)")
+		("sparse-constraints-file", boost::program_options::value<std::string>(&OPT::strSparseContraintsFilename), "Filename to the point cloud constraints to apply during depthmap estimate initialization")
+		;
 
 	// hidden options, allowed both on command line and
 	// in config file, but will not be shown to the user
@@ -206,6 +208,7 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 	Util::ensureValidPath(OPT::strMeshFileName);
 	Util::ensureValidPath(OPT::strExportROIFileName);
 	Util::ensureValidPath(OPT::strImportROIFileName);
+	Util::ensureValidPath(OPT::strSparseContraintsFilename);
 	if (OPT::strOutputFileName.empty())
 		OPT::strOutputFileName = Util::getFileFullName(OPT::strInputFileName) + _T("_dense.mvs");
 
@@ -291,6 +294,9 @@ int main(int argc, LPCTSTR* argv)
 		return EXIT_FAILURE;
 	if (!scene.EstimateROI(OPT::nEstimateROI, 1.1f))
 		return EXIT_FAILURE;
+	if (!OPT::strSparseContraintsFilename.empty() && !scene.LoadSparseContraints(MAKE_PATH_SAFE(OPT::strSparseContraintsFilename))){
+		return EXIT_FAILURE;
+	}
 	if (!OPT::strExportROIFileName.empty() && scene.IsBounded()) {
 		std::ofstream fs(MAKE_PATH_SAFE(OPT::strExportROIFileName));
 		if (!fs)

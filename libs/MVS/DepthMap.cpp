@@ -38,6 +38,8 @@
 // CGAL: depth-map initialization
 #include <CGAL/Simple_cartesian.h>
 #include <CGAL/Delaunay_triangulation_2.h>
+#include <CGAL/Constrained_Delaunay_triangulation_2.h>
+#include <CGAL/Constrained_triangulation_2.h>
 #include <CGAL/Triangulation_vertex_base_with_info_2.h>
 // CGAL: estimate normals
 #include <CGAL/Simple_cartesian.h>
@@ -1010,12 +1012,16 @@ namespace CGAL {
 
 // triangulate in-view points, generating a 2D mesh
 // return also the estimated depth boundaries (min and max depth)
-std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& image, const PointCloud& pointcloud, const IndexArr& points, Mesh& mesh, Point2fArr& projs, bool bAddCorners)
+std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& image, const PointCloud& pointcloud, const IndexArr& points, Mesh& mesh, Point2fArr& projs, bool bAddCorners, const SparseConstraints &sparseConstraints)
 {
 	typedef CGAL::Simple_cartesian<double> kernel_t;
 	typedef CGAL::Triangulation_vertex_base_with_info_2<Mesh::VIndex, kernel_t> vertex_base_t;
-	typedef CGAL::Triangulation_data_structure_2<vertex_base_t> triangulation_data_structure_t;
-	typedef CGAL::Delaunay_triangulation_2<kernel_t, triangulation_data_structure_t> Delaunay;
+	// typedef CGAL::Triangulation_data_structure_2<vertex_base_t> triangulation_data_structure_t;
+	typedef CGAL::Constrained_triangulation_face_base_2<kernel_t>  face_base_t;
+	typedef CGAL::Triangulation_data_structure_2<vertex_base_t, face_base_t> triangulation_data_structure_t;
+	// typedef CGAL::Delaunay_triangulation_2<kernel_t, triangulation_data_structure_t> Delaunay;
+	typedef CGAL::Exact_predicates_tag tag;
+	typedef CGAL::Constrained_Delaunay_triangulation_2<kernel_t, triangulation_data_structure_t, tag> Delaunay;
 	typedef Delaunay::Face_circulator FaceCirculator;
 	typedef Delaunay::Face_handle FaceHandle;
 	typedef Delaunay::Vertex_circulator VertexCirculator;
@@ -1039,6 +1045,43 @@ std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& imag
 		if (depthBounds.second < pt.z)
 			depthBounds.second = pt.z;
 	}
+
+	if (sparseConstraints.find(image.GetID()) != sparseConstraints.end()){
+		for (auto &lines : sparseConstraints.at(image.GetID())){
+			Point3f p1 = lines.first;
+			Point3f p2 = lines.second;
+
+			const Point3f pt1(image.camera.ProjectPointP3(p1));
+			const Point3f x1(pt1.x/pt1.z, pt1.y/pt1.z, pt1.z);
+
+			const Point3f pt2(image.camera.ProjectPointP3(p2));
+			const Point3f x2(pt2.x/pt2.z, pt2.y/pt2.z, pt2.z);
+
+			VertexHandle v1 = delaunay.insert(CPoint(x1.x, x1.y));
+			VertexHandle v2 = delaunay.insert(CPoint(x2.x, x2.y));
+
+			v1->info() = mesh.vertices.size();
+			mesh.vertices.emplace_back(image.camera.TransformPointI2C(x1));
+			projs.emplace_back(x1.x, x1.y);
+
+			v2->info() = mesh.vertices.size();
+			mesh.vertices.emplace_back(image.camera.TransformPointI2C(x2));
+			projs.emplace_back(x2.x, x2.y);
+			
+			delaunay.insert_constraint(v1, v2);
+
+			if (depthBounds.first > pt1.z)
+				depthBounds.first = pt1.z;
+			if (depthBounds.second < pt1.z)
+				depthBounds.second = pt1.z;
+
+			if (depthBounds.first > pt2.z)
+				depthBounds.first = pt2.z;
+			if (depthBounds.second < pt2.z)
+				depthBounds.second = pt2.z;
+		}
+	}
+
 	// if full size depth-map requested
 	const size_t numPoints(3);
 	if (bAddCorners && points.size() >= numPoints) {
@@ -1109,14 +1152,14 @@ std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& imag
 // and interpolating normal and depth for all pixels
 bool MVS::TriangulatePoints2DepthMap(
 	const DepthData::ViewData& image, const PointCloud& pointcloud, const IndexArr& points,
-	DepthMap& depthMap, NormalMap& normalMap, Depth& dMin, Depth& dMax, bool bAddCorners)
+	DepthMap& depthMap, NormalMap& normalMap, Depth& dMin, Depth& dMax, bool bAddCorners, const SparseConstraints &sparseContraints)
 {
 	ASSERT(image.pImageData != NULL);
 
 	// triangulate in-view points
 	Mesh mesh;
 	Point2fArr projs;
-	const std::pair<float,float> thDepth(TriangulatePointsDelaunay(image, pointcloud, points, mesh, projs, bAddCorners));
+	const std::pair<float,float> thDepth(TriangulatePointsDelaunay(image, pointcloud, points, mesh, projs, bAddCorners, sparseContraints));
 	dMin = thDepth.first;
 	dMax = thDepth.second;
 
@@ -1168,14 +1211,14 @@ bool MVS::TriangulatePoints2DepthMap(
 // same as above, but does not estimate the normal-map
 bool MVS::TriangulatePoints2DepthMap(
 	const DepthData::ViewData& image, const PointCloud& pointcloud, const IndexArr& points,
-	DepthMap& depthMap, Depth& dMin, Depth& dMax, bool bAddCorners)
+	DepthMap& depthMap, Depth& dMin, Depth& dMax, bool bAddCorners, const SparseConstraints &sparseConstraints)
 {
 	ASSERT(image.pImageData != NULL);
 
 	// triangulate in-view points
 	Mesh mesh;
 	Point2fArr projs;
-	const std::pair<float,float> thDepth(TriangulatePointsDelaunay(image, pointcloud, points, mesh, projs, bAddCorners));
+	const std::pair<float,float> thDepth(TriangulatePointsDelaunay(image, pointcloud, points, mesh, projs, bAddCorners, sparseConstraints));
 	dMin = thDepth.first;
 	dMax = thDepth.second;
 

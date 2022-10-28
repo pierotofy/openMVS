@@ -1469,3 +1469,50 @@ bool Scene::EstimateROI(int nEstimateROI, float scale)
 	return true;
 } // EstimateROI
 /*----------------------------------------------------------------*/
+
+bool Scene::LoadSparseContraints(const String& constraintsFile){
+	sparseContraints.clear();
+	std::ifstream fin(constraintsFile, std::ios::binary);
+	if (!fin.is_open()){
+		VERBOSE("Cannot open %s", constraintsFile);
+		return false;
+	}
+
+	unsigned int totalContraints = 0;
+
+	while(!fin.eof()){
+		unsigned int numViews;
+		fin.read(reinterpret_cast<char *>(&numViews), sizeof(numViews));
+
+		std::vector<unsigned int> views;
+		for (unsigned int i = 0; i < numViews; i++){
+			unsigned int v;
+			fin.read(reinterpret_cast<char *>(&v), sizeof(v));
+			views.push_back(v);
+		}
+
+		unsigned int numPoints;
+		fin.read(reinterpret_cast<char *>(&numPoints), sizeof(numPoints));
+
+		for (unsigned int i = 0; i < numPoints; i += 2){
+			Point3f p1, p2;
+			fin.read(reinterpret_cast<char *>(&p1.x), sizeof(float));
+			fin.read(reinterpret_cast<char *>(&p1.y), sizeof(float));
+			fin.read(reinterpret_cast<char *>(&p1.z), sizeof(float));
+			fin.read(reinterpret_cast<char *>(&p2.x), sizeof(float));
+			fin.read(reinterpret_cast<char *>(&p2.y), sizeof(float));
+			fin.read(reinterpret_cast<char *>(&p2.z), sizeof(float));
+			
+			for (size_t v = 0; v < views.size(); v++){
+				sparseContraints[v].push_back(std::make_pair(p1, p2));
+			}
+
+			totalContraints++;
+		}
+
+	}
+
+	VERBOSE("Loaded %d constraints", totalContraints);
+
+	return true;
+}
