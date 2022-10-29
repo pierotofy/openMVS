@@ -1503,13 +1503,14 @@ bool Scene::LoadSparseContraints(const String& constraintsFile){
 			fin.read(reinterpret_cast<char *>(&p2.y), sizeof(float));
 			fin.read(reinterpret_cast<char *>(&p2.z), sizeof(float));
 			
-			for (size_t v = 0; v < views.size(); v++){
+			for (auto v : views){
 				sparseContraints[v].push_back(std::make_pair(p1, p2));
 			}
 
 			totalContraints++;
 		}
-
+		
+		if (fin.peek() == EOF) break;
 	}
 
 	VERBOSE("Loaded %d constraints", totalContraints);

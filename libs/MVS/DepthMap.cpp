@@ -1016,11 +1016,9 @@ std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& imag
 {
 	typedef CGAL::Simple_cartesian<double> kernel_t;
 	typedef CGAL::Triangulation_vertex_base_with_info_2<Mesh::VIndex, kernel_t> vertex_base_t;
-	// typedef CGAL::Triangulation_data_structure_2<vertex_base_t> triangulation_data_structure_t;
 	typedef CGAL::Constrained_triangulation_face_base_2<kernel_t>  face_base_t;
 	typedef CGAL::Triangulation_data_structure_2<vertex_base_t, face_base_t> triangulation_data_structure_t;
-	// typedef CGAL::Delaunay_triangulation_2<kernel_t, triangulation_data_structure_t> Delaunay;
-	typedef CGAL::Exact_predicates_tag tag;
+	typedef CGAL::No_intersection_tag tag;
 	typedef CGAL::Constrained_Delaunay_triangulation_2<kernel_t, triangulation_data_structure_t, tag> Delaunay;
 	typedef Delaunay::Face_circulator FaceCirculator;
 	typedef Delaunay::Face_handle FaceHandle;
@@ -1060,6 +1058,14 @@ std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& imag
 			VertexHandle v1 = delaunay.insert(CPoint(x1.x, x1.y));
 			VertexHandle v2 = delaunay.insert(CPoint(x2.x, x2.y));
 
+			try{
+				delaunay.insert_constraint(v1, v2);
+				
+			}catch(std::exception &e){
+				// catch CGAL::Intersection_of_constraints_exception
+				// Nothing
+			}
+
 			v1->info() = mesh.vertices.size();
 			mesh.vertices.emplace_back(image.camera.TransformPointI2C(x1));
 			projs.emplace_back(x1.x, x1.y);
@@ -1068,8 +1074,6 @@ std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& imag
 			mesh.vertices.emplace_back(image.camera.TransformPointI2C(x2));
 			projs.emplace_back(x2.x, x2.y);
 			
-			delaunay.insert_constraint(v1, v2);
-
 			if (depthBounds.first > pt1.z)
 				depthBounds.first = pt1.z;
 			if (depthBounds.second < pt1.z)
