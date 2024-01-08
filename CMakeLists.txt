@@ -19,14 +19,6 @@ SET(OpenMVS_BUILD_TOOLS ON CACHE BOOL "Build example applications")
 SET(OpenMVS_USE_OPENMP ON CACHE BOOL "Enable OpenMP library")
 SET(OpenMVS_USE_OPENGL ON CACHE BOOL "Enable OpenGL library")
 SET(OpenMVS_USE_BREAKPAD ON CACHE BOOL "Enable BreakPad library")
-<<<<<<< HEAD
-SET(OpenMVS_USE_PYTHON OFF CACHE BOOL "Enable Python library bindings")
-SET(OpenMVS_USE_CERES OFF CACHE BOOL "Enable CERES optimization library")
-SET(OpenMVS_USE_CUDA ON CACHE BOOL "Enable CUDA library")
-SET(OpenMVS_USE_FAST_FLOAT2INT ON CACHE BOOL "Use an optimized code to convert real numbers to int")
-SET(OpenMVS_USE_FAST_INVSQRT OFF CACHE BOOL "Use an optimized code to compute the inverse square root (slower in fact on modern compilers)")
-SET(OpenMVS_USE_FAST_CBRT ON CACHE BOOL "Use an optimized code to compute the cubic root")
-=======
 SET(OpenMVS_USE_PYTHON ON CACHE BOOL "Enable Python library bindings")
 SET(OpenMVS_USE_CERES OFF CACHE BOOL "Enable CERES optimization library")
 SET(OpenMVS_USE_CUDA ON CACHE BOOL "Enable CUDA library")
@@ -34,7 +26,6 @@ SET(OpenMVS_USE_FAST_FLOAT2INT OFF CACHE BOOL "Use an optimized code to convert 
 SET(OpenMVS_USE_FAST_INVSQRT OFF CACHE BOOL "Use an optimized code to compute the inverse square root (slower in fact on modern compilers)")
 SET(OpenMVS_USE_FAST_CBRT OFF CACHE BOOL "Use an optimized code to compute the cubic root")
 SET(OpenMVS_USE_SSE ON CACHE BOOL "Enable SSE optimizations")
->>>>>>> cdc/master
 SET(OpenMVS_MAX_CUDA_COMPATIBILITY OFF CACHE BOOL "Build for maximum CUDA device compatibility")
 SET(OpenMVS_ENABLE_TESTS ON CACHE BOOL "Enable test code")
 
@@ -64,12 +55,6 @@ PROJECT(OpenMVS)
 # cmake_dependent_option(OpenMVS_USE_SSE "Enable SSE optimizations" ON "NOT CMAKE_SYSTEM_PROCESSOR MATCHES \"^(arm|ARM|aarch64|AARCH64).\"" OFF)
 
 SET(OpenMVS_MAJOR_VERSION 2)
-<<<<<<< HEAD
-SET(OpenMVS_MINOR_VERSION 2)
-SET(OpenMVS_PATCH_VERSION 0)
-SET(OpenMVS_VERSION ${OpenMVS_MAJOR_VERSION}.${OpenMVS_MINOR_VERSION}.${OpenMVS_PATCH_VERSION})
-
-=======
 SET(OpenMVS_MINOR_VERSION 3)
 SET(OpenMVS_PATCH_VERSION 0)
 SET(OpenMVS_VERSION ${OpenMVS_MAJOR_VERSION}.${OpenMVS_MINOR_VERSION}.${OpenMVS_PATCH_VERSION})
@@ -79,7 +64,6 @@ IF(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|ARM|aarch64|AARCH64)")
 	SET(OpenMVS_USE_SSE OFF)
 ENDIF()
 
->>>>>>> cdc/master
 # Define helper functions and macros.
 INCLUDE(build/Utils.cmake)
 
@@ -133,7 +117,7 @@ if(OpenMVS_USE_CUDA)
 		ENABLE_LANGUAGE(CUDA)
 		# CUDA-11.x can not be compiled using C++14 standard on Windows
 		string(REGEX MATCH "^[0-9]+" CUDA_MAJOR ${CMAKE_CUDA_COMPILER_VERSION})
-		if(${CUDA_MAJOR} GREATER 10)
+		if(${CUDA_MAJOR} GREATER 10 AND CMAKE_CXX_COMPILER MATCHES "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "19.29")
 			SET(CMAKE_CUDA_STANDARD 17)
 		endif()
 		EXECUTE_PROCESS(COMMAND "${CMAKE_CUDA_COMPILER}" --list-gpu-arch 
@@ -195,15 +179,6 @@ if(OpenMVS_USE_BREAKPAD)
 	endif()
 endif()
 
-<<<<<<< HEAD
-if(OpenMVS_USE_PYTHON)
-	FIND_PACKAGE(PythonLibs 3.0 REQUIRED)
-	if(PythonLibs_FOUND)
-		INCLUDE_DIRECTORIES(${PYTHON_INCLUDE_DIRS})
-		LIST(APPEND OpenMVS_EXTRA_INCLUDES ${PYTHON_INCLUDE_DIRS})
-		LIST(APPEND OpenMVS_EXTRA_LIBS ${PYTHON_LIBRARIES})
-		MESSAGE(STATUS "Python ${PYTHON_VERSION} found (include: ${PYTHON_INCLUDE_DIRS})")
-=======
 SET(Boost_EXTRA_COMPONENTS "")
 if(OpenMVS_USE_PYTHON)
 	FIND_PACKAGE(Python3 COMPONENTS Interpreter Development REQUIRED)
@@ -213,17 +188,12 @@ if(OpenMVS_USE_PYTHON)
 		LIST(APPEND OpenMVS_EXTRA_LIBS ${Python3_LIBRARIES})
 		LIST(APPEND Boost_EXTRA_COMPONENTS python${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR})
 		MESSAGE(STATUS "Python ${Python3_VERSION_MAJOR}.${Python3_VERSION_MINOR} found (include: ${Python3_INCLUDE_DIRS})")
->>>>>>> cdc/master
 	else()
 		MESSAGE("-- Can't find Python. Continuing without it.")
 	endif()
 endif()
 
-<<<<<<< HEAD
-FIND_PACKAGE(Boost REQUIRED COMPONENTS iostreams program_options system serialization OPTIONAL_COMPONENTS python3)
-=======
 FIND_PACKAGE(Boost REQUIRED COMPONENTS iostreams program_options system serialization OPTIONAL_COMPONENTS ${Boost_EXTRA_COMPONENTS})
->>>>>>> cdc/master
 if(Boost_FOUND)
 	LIST(APPEND OpenMVS_EXTRA_INCLUDES ${Boost_INCLUDE_DIRS})
 	INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIRS})
@@ -234,11 +204,7 @@ if(Boost_FOUND)
 		LIST(APPEND Boost_LIBRARIES zstd)
 	endif()
 	SET(_USE_BOOST TRUE)
-<<<<<<< HEAD
-	if(Boost_python3_FOUND)
-=======
 	if(OpenMVS_USE_PYTHON AND Boost_${Boost_EXTRA_COMPONENTS}_FOUND)
->>>>>>> cdc/master
 		SET(_USE_BOOST_PYTHON TRUE)
 	endif()
 endif()
