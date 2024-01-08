@@ -56,10 +56,6 @@ public:
 	template <typename RobustNormFunctor>
 	int Optimize(const POINT*, size_t, const RobustNormFunctor& robust, int maxIters=100);
 
-	int Optimize(const POINT*, size_t, int maxIters=100);
-	template <typename RobustNormFunctor>
-	int Optimize(const POINT*, size_t, const RobustNormFunctor& robust, int maxIters=100);
-
 	inline void Invalidate();
 	inline bool IsValid() const;
 
