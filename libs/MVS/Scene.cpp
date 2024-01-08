@@ -935,9 +935,8 @@ bool Scene::SelectNeighborViews(uint32_t ID, IndexArr& points, unsigned nMinView
 
 void Scene::SelectNeighborViews(unsigned nMinViews, unsigned nMinPointViews, float fOptimAngle, unsigned nInsideROI)
 {
-	#ifdef DENSE_USE_OPENMP
-	#pragma omp parallel for shared(data, bAbort)
-	for (int_t ID=0; ID<(int_t)images.GetSize(); ++ID) {
+	#ifdef SCENE_USE_OPENMP
+	for (int_t ID=0; ID<(int_t)images.size(); ++ID) {
 		const IIndex idxImage((IIndex)ID);
 	#else
 	FOREACH(idxImage, images) {
@@ -1847,7 +1846,10 @@ size_t Scene::DrawCircle(PointCloud& pc, PointCloud::PointArr& outCircle, const 
 			pc.pointViews.emplace_back(views);
 			pc.normals.emplace_back(n);
 			pc.colors.emplace_back(Pixel8U::YELLOW);
+<<<<<<< HEAD
 			pc.pointWeights.emplace_back(PointCloud::WeightArr{1.f});
+=======
+>>>>>>> cdc/master
 		}
 	}
 	return outCircle.size();
@@ -1926,8 +1928,11 @@ PointCloud Scene::BuildTowerMesh(const PointCloud& origPointCloud, const Point2f
 				const float aboveRad(circleRadii[ri - 1]);
 				float& circleRadius = circleRadii[ri];
 				const float belowRad(circleRadii[ri + 1]);
+<<<<<<< HEAD
 				const float AbvCrtDeltaPrc = ABS(aboveRad - circleRadius) / aboveRad;
 				const float BelCrtDeltaPrc = ABS(circleRadius - belowRad) / circleRadius;
+=======
+>>>>>>> cdc/master
 				// set current radius as average of the most similar values in the closest 7 neighbors
 				if (ri > 2 && ri < circleRadii.size() - 5) {
 					FloatArr neighSeven(7);
@@ -2009,6 +2014,7 @@ PointCloud Scene::BuildTowerMesh(const PointCloud& origPointCloud, const Point2f
 							mesh.faces.emplace_back(v0, v2, v1);
 					}
 				}
+<<<<<<< HEAD
 				if (bInverted) {
 					topPoints.swap(botPoints);
 				}
@@ -2018,6 +2024,19 @@ PointCloud Scene::BuildTowerMesh(const PointCloud& origPointCloud, const Point2f
 		towerPC.Save("cylinder.ply");
 	}
 	#endif
+=======
+				if (bInverted)
+					topPoints.swap(botPoints);
+			}
+		}
+		mesh.Save("tower_mesh.ply");
+	} else
+	#endif
+	{
+		mesh.Release();
+	}
+	towerPC.Save("tower.ply");
+>>>>>>> cdc/master
 	return towerPC;
 }
 
@@ -2033,6 +2052,7 @@ void Scene::InitTowerScene(const int towerMode)
 	Point2f centerPoint;
 	if (!ComputeTowerCylinder(centerPoint, fRadius, fROIRadius, zMin, zMax, minCamZ, towerMode))
 		return;
+<<<<<<< HEAD
 	DEBUG("Scene camera positions identified ROI as a tower, select neighbors as if ROI is a tower");
 
 	// add nTargetPoints points on each circle
@@ -2044,6 +2064,14 @@ void Scene::InitTowerScene(const int towerMode)
 		break;
 	}
 	case 2: { // append
+=======
+
+	// add nTargetPoints points on each circle
+	PointCloud towerPC(BuildTowerMesh(pointcloud, centerPoint, fRadius, fROIRadius, zMin, zMax, minCamZ, false));
+	mesh.Release();
+
+	const auto AppendPointCloud = [this](const PointCloud& towerPC) {
+>>>>>>> cdc/master
 		bool bHasNormal(pointcloud.normals.size() == pointcloud.GetSize());
 		bool bHasColor(pointcloud.colors.size() == pointcloud.GetSize());
 		bool bHasWeights(pointcloud.pointWeights.size() == pointcloud.GetSize());
@@ -2057,6 +2085,7 @@ void Scene::InitTowerScene(const int towerMode)
 			if (bHasWeights)
 				pointcloud.pointWeights.emplace_back(towerPC.pointWeights[idxPoint]);
 		}
+<<<<<<< HEAD
 		break;
 	}
 	case 3: { // select neighbors and remove added points
@@ -2085,4 +2114,31 @@ void Scene::InitTowerScene(const int towerMode)
 		break;
 	}
 	}
+=======
+	};
+
+	switch (ABS(towerMode)) {
+	case 1: // replace
+		pointcloud = std::move(towerPC);
+		VERBOSE("Scene identified as tower-like; replace existing point-cloud with detected tower point-cloud");
+		break;
+	case 2: // append
+		AppendPointCloud(towerPC);
+		VERBOSE("Scene identified as tower-like; append to existing point-cloud the detected tower point-cloud");
+		break;
+	case 3: // select neighbors
+		pointcloud.Swap(towerPC);
+		SelectNeighborViews(OPTDENSE::nMinViews, OPTDENSE::nMinViewsTrustPoint>1?OPTDENSE::nMinViewsTrustPoint:2, FD2R(OPTDENSE::fOptimAngle), OPTDENSE::nPointInsideROI);
+		pointcloud.Swap(towerPC);
+		VERBOSE("Scene identified as tower-like; only select view neighbors from detected tower point-cloud");
+		break;
+	case 4: // select neighbors and append tower points
+		pointcloud.Swap(towerPC);
+		SelectNeighborViews(OPTDENSE::nMinViews, OPTDENSE::nMinViewsTrustPoint>1?OPTDENSE::nMinViewsTrustPoint:2, FD2R(OPTDENSE::fOptimAngle), OPTDENSE::nPointInsideROI);
+		pointcloud.Swap(towerPC);
+		AppendPointCloud(towerPC);
+		VERBOSE("Scene identified as tower-like; select view neighbors from detected tower point-cloud and next append it to existing point-cloud");
+		break;
+	}
+>>>>>>> cdc/master
 } // InitTowerScene

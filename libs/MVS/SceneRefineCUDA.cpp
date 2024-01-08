@@ -2308,8 +2308,7 @@ void MeshRefineCUDA::ListCameraFaces()
 			const Image& imageData = images[ID];
 			if (!imageData.IsValid())
 				continue;
-			typedef TFrustum<float,5> Frustum;
-			const Frustum frustum(Frustum::MATRIX3x4(((PMatrix::CEMatMap)imageData.camera.P).cast<float>()), (float)imageData.width, (float)imageData.height);
+			const TFrustum<float,5> frustum(Matrix3x4f(imageData.camera.P), (float)imageData.width, (float)imageData.height);
 			Mesh::FacesInserter inserter(arrCameraFaces[ID]);
 			octree.Traverse(frustum, inserter);
 		}
@@ -2401,13 +2400,13 @@ void MeshRefineCUDA::SubdivideMesh(uint32_t maxArea, float fDecimate, unsigned n
 			ListFaceAreas(maxAreas);
 			ASSERT(!maxAreas.IsEmpty());
 
-			const float maxArea((float)(maxArea > 0 ? maxArea : 64));
+			const float maxAreaf((float)(maxArea > 0 ? maxArea : 64));
 			const float medianArea(6.f*(float)Mesh::AreaArr(maxAreas).GetMedian());
-			if (medianArea < maxArea) {
+			if (medianArea < maxAreaf) {
 				maxAreas.Empty();
 
 				// decimate to the auto detected resolution
-				scene.mesh.Clean(MAXF(0.1f, medianArea/maxArea), 0.f, false, nCloseHoles, 0u, 0.f, false);
+				scene.mesh.Clean(MAXF(0.1f, medianArea/maxAreaf), 0.f, false, nCloseHoles, 0u, 0.f, false);
 				scene.mesh.Clean(1.f, 0.f, false, nCloseHoles, 0u, 0.f, true);
 
 				#ifdef MESHOPT_ENSUREEDGESIZE

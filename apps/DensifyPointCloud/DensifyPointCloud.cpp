@@ -75,8 +75,17 @@ String strConfigFileName;
 boost::program_options::variables_map vm;
 } // namespace OPT
 
+class Application {
+public:
+	Application() {}
+	~Application() { Finalize(); }
+
+	bool Initialize(size_t argc, LPCTSTR* argv);
+	void Finalize();
+}; // Application
+
 // initialize and parse the command line parameters
-bool Initialize(size_t argc, LPCTSTR* argv)
+bool Application::Initialize(size_t argc, LPCTSTR* argv)
 {
 	// initialize log and console
 	OPEN_LOG();
@@ -158,7 +167,7 @@ bool Initialize(size_t argc, LPCTSTR* argv)
         ("estimate-roi", boost::program_options::value(&OPT::nEstimateROI)->default_value(2), "estimate and set region-of-interest (0 - disabled, 1 - enabled, 2 - adaptive)")
         ("crop-to-roi", boost::program_options::value(&OPT::bCrop2ROI)->default_value(true), "crop scene using the region-of-interest")
         ("remove-dmaps", boost::program_options::value(&bRemoveDmaps)->default_value(false), "remove depth-maps after fusion")
-		("tower-mode", boost::program_options::value(&OPT::nTowerMode)->default_value(3), "add a cylinder of points in the center of ROI; scene assume to be Z-up oriented (0 - disabled, 1 - replace, 2 - append, 3 - select neighbors, <0 - force tower mode)")
+		("tower-mode", boost::program_options::value(&OPT::nTowerMode)->default_value(4), "add a cylinder of points in the center of ROI; scene assume to be Z-up oriented (0 - disabled, 1 - replace, 2 - append, 3 - select neighbors, 4 - select neighbors & append, <0 - force tower mode)")
         ;
 
 	// hidden options, allowed both on command line and
@@ -248,29 +257,14 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 	if (!bValidConfig && !OPT::strDenseConfigFileName.empty())
 		OPTDENSE::oConfig.Save(OPT::strDenseConfigFileName);
 
-	// initialize global options
-	Process::setCurrentProcessPriority((Process::Priority)OPT::nProcessPriority);
-	#ifdef _USE_OPENMP
-	if (OPT::nMaxThreads != 0)
-		omp_set_num_threads(OPT::nMaxThreads);
-	#endif
-
-	#ifdef _USE_BREAKPAD
-	// start memory dumper
-	MiniDumper::Create(APPNAME, WORKING_FOLDER);
-	#endif
-
-	Util::Init();
+	MVS::Initialize(APPNAME, OPT::nMaxThreads, OPT::nProcessPriority);
 	return true;
 }
 
 // finalize application instance
-void Finalize()
+void Application::Finalize()
 {
-	#if TD_VERBOSE != TD_VERBOSE_OFF
-	// print memory statistics
-	Util::LogMemoryInfo();
-	#endif
+	MVS::Finalize();
 
 	CLOSE_LOGFILE();
 	CLOSE_LOGCONSOLE();
@@ -286,7 +280,8 @@ int main(int argc, LPCTSTR* argv)
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);// | _CRTDBG_CHECK_ALWAYS_DF);
 	#endif
 
-	if (!Initialize(argc, argv))
+	Application application;
+	if (!application.Initialize(argc, argv))
 		return EXIT_FAILURE;
 
 	Scene scene(OPT::nMaxThreads);
@@ -302,7 +297,6 @@ int main(int argc, LPCTSTR* argv)
 			scene.mesh.SamplePoints(ROUND2INT<unsigned>(-OPT::fSampleMesh), pointcloud);
 		VERBOSE("Sample mesh completed: %u points (%s)", pointcloud.GetSize(), TD_TIMER_GET_FMT().c_str());
 		pointcloud.Save(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName))+_T(".ply"));
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	// load and estimate a dense point-cloud
@@ -333,7 +327,6 @@ int main(int argc, LPCTSTR* argv)
 			return EXIT_FAILURE;
 		fs >> scene.obb;
 		scene.Save(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName))+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	if (!scene.IsBounded())
@@ -343,7 +336,6 @@ int main(int argc, LPCTSTR* argv)
 		if (!fs)
 			return EXIT_FAILURE;
 		fs << scene.obb;
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	if (OPT::nTowerMode!=0)
@@ -366,7 +358,6 @@ int main(int argc, LPCTSTR* argv)
 		if (!scene.ExportMeshToDepthMaps(MAKE_PATH_SAFE(OPT::strExportDepthMapsName)))
 			return EXIT_FAILURE;
 		VERBOSE("Mesh projection completed: %u depth-maps (%s)", scene.images.size(), TD_TIMER_GET_FMT().c_str());
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	if (OPT::fMaxSubsceneArea > 0) {
@@ -374,7 +365,6 @@ int main(int argc, LPCTSTR* argv)
 		Scene::ImagesChunkArr chunks;
 		scene.Split(chunks, OPT::fMaxSubsceneArea);
 		scene.ExportChunks(chunks, GET_PATH_FULL(OPT::strOutputFileName), (ARCHIVE_TYPE)OPT::nArchiveType);
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	if (OPT::thFilterPointCloud < 0) {
@@ -383,7 +373,6 @@ int main(int argc, LPCTSTR* argv)
 		const String baseFileName(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName))+_T("_filtered"));
 		scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
 		scene.pointcloud.Save(baseFileName+_T(".ply"));
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	if (OPT::nExportNumViews && scene.pointcloud.IsValid()) {
@@ -399,7 +388,6 @@ int main(int argc, LPCTSTR* argv)
 			scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
 			scene.pointcloud.Save(baseFileName+_T(".ply"));
 		}
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	if (OPT::fEstimateScale > 0 && !scene.pointcloud.IsEmpty() && !scene.images.empty()) {
@@ -413,23 +401,21 @@ int main(int argc, LPCTSTR* argv)
 		}
 		const String baseFileName(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName)));
 		scene.pointcloud.SaveWithScale(baseFileName+_T("_scale.ply"), scene.images, OPT::fEstimateScale);
-		Finalize();
 		return EXIT_SUCCESS;
 	}
 	PointCloud sparsePointCloud;
-	if (OPT::nArchiveType != ARCHIVE_MVS || sceneType == Scene::SCENE_INTERFACE) {
+	if ((ARCHIVE_TYPE)OPT::nArchiveType != ARCHIVE_MVS || sceneType == Scene::SCENE_INTERFACE) {
 		#if TD_VERBOSE != TD_VERBOSE_OFF
 		if (VERBOSITY_LEVEL > 1 && !scene.pointcloud.IsEmpty())
 			scene.pointcloud.PrintStatistics(scene.images.data(), &scene.obb);
 		#endif
-		if (OPT::nArchiveType == ARCHIVE_MVS)
+		if ((ARCHIVE_TYPE)OPT::nArchiveType == ARCHIVE_MVS)
 			sparsePointCloud = scene.pointcloud;
 		TD_TIMER_START();
 		if (!scene.DenseReconstruction(OPT::nFusionMode, OPT::bCrop2ROI, OPT::fBorderROI)) {
 			if (ABS(OPT::nFusionMode) != 1)
 				return EXIT_FAILURE;
 			VERBOSE("Depth-maps estimated (%s)", TD_TIMER_GET_FMT().c_str());
-			Finalize();
 			return EXIT_SUCCESS;
 		}
 		VERBOSE("Densifying point-cloud completed: %u points (%s)", scene.pointcloud.GetSize(), TD_TIMER_GET_FMT().c_str());
@@ -437,16 +423,14 @@ int main(int argc, LPCTSTR* argv)
 
 	// save the final point-cloud
 	const String baseFileName(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName)));
-	scene.pointcloud.Save(baseFileName+_T(".ply"), OPT::nArchiveType==ARCHIVE_MVS);
+	scene.pointcloud.Save(baseFileName+_T(".ply"), (ARCHIVE_TYPE)OPT::nArchiveType == ARCHIVE_MVS);
 	#if TD_VERBOSE != TD_VERBOSE_OFF
 	if (VERBOSITY_LEVEL > 2)
 		scene.ExportCamerasMLP(baseFileName+_T(".mlp"), baseFileName+_T(".ply"));
 	#endif
-	if (OPT::nArchiveType == ARCHIVE_MVS)
+	if ((ARCHIVE_TYPE)OPT::nArchiveType == ARCHIVE_MVS)
 		scene.pointcloud.Swap(sparsePointCloud);
 	scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
-
-	Finalize();
 	return EXIT_SUCCESS;
 }
 /*----------------------------------------------------------------*/

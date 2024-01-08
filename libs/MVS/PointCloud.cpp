@@ -293,6 +293,7 @@ namespace BasicPLY {
 		{"nx",            PLY::Float32, PLY::Float32, offsetof(Vertex,n.x), 0, 0, 0, 0},
 		{"ny",            PLY::Float32, PLY::Float32, offsetof(Vertex,n.y), 0, 0, 0, 0},
 		{"nz",            PLY::Float32, PLY::Float32, offsetof(Vertex,n.z), 0, 0, 0, 0},
+<<<<<<< HEAD
 		{"views",         PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,views.num), 0, 0, 0, 0}
 		//{"view_indices",  PLY::Uint32,  PLY::Uint32,  offsetof(Vertex,views.pIndices), 1, PLY::Uint8, PLY::Uint8, offsetof(Vertex,views.num)},
 		//{"view_weights",  PLY::Float32, PLY::Float32, offsetof(Vertex,views.pWeights), 1, PLY::Uint8, PLY::Uint8, offsetof(Vertex,views.num)},
@@ -302,6 +303,16 @@ namespace BasicPLY {
 		//{"diffuse_red",   PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.r), 0, 0, 0, 0},
 		//{"diffuse_green", PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.g), 0, 0, 0, 0},
 		//{"diffuse_blue",  PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.b), 0, 0, 0, 0}
+=======
+		{"view_indices",  PLY::Uint32,  PLY::Uint32,  offsetof(Vertex,views.pIndices), 1, PLY::Uint8, PLY::Uint8, offsetof(Vertex,views.num)},
+		{"view_weights",  PLY::Float32, PLY::Float32, offsetof(Vertex,views.pWeights), 1, PLY::Uint8, PLY::Uint8, offsetof(Vertex,views.num)},
+		{"confidence",    PLY::Float32, PLY::Float32, offsetof(Vertex,confidence), 0, 0, 0, 0},
+		{"value",         PLY::Float32, PLY::Float32, offsetof(Vertex,scale), 0, 0, 0, 0},
+		// duplicates
+		{"diffuse_red",   PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.r), 0, 0, 0, 0},
+		{"diffuse_green", PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.g), 0, 0, 0, 0},
+		{"diffuse_blue",  PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.b), 0, 0, 0, 0}
+>>>>>>> cdc/master
 	};
 } // namespace BasicPLY
 } // namespace PointCloudInternal
@@ -439,7 +450,11 @@ bool PointCloud::SaveNViews(const String& fileName, uint32_t minViews, bool bLeg
 		}
 	} else {
 		// describe what properties go into the vertex elements
+<<<<<<< HEAD
 		ply.describe_property(BasicPLY::elem_names[0], 10, BasicPLY::Vertex::props);
+=======
+		ply.describe_property(BasicPLY::elem_names[0], 9, BasicPLY::Vertex::props);
+>>>>>>> cdc/master
 
 		// export the array of 3D points
 		FOREACH(i, points) {
@@ -449,7 +464,10 @@ bool PointCloud::SaveNViews(const String& fileName, uint32_t minViews, bool bLeg
 			vertex.p = points[i];
 			vertex.n = normals[i];
 			vertex.c = colors.empty() ? Pixel8U::WHITE : colors[i];
+<<<<<<< HEAD
 			vertex.views.num = pointViews[i].size();
+=======
+>>>>>>> cdc/master
 			ply.put_element(&vertex);
 		}
 	}
