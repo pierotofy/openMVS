@@ -29,6 +29,8 @@
 *      containing it.
 */
 
+#include "ConfigLocal.h"
+
 #ifdef _USE_BOOST_PYTHON
 
 #undef _USRDLL
@@ -52,9 +54,12 @@ class Scene : public MVS::Scene
 {
 public:
 	Scene(unsigned _nMaxThreads=0) : MVS::Scene(_nMaxThreads) {
-		Util::Init();
 		INIT_WORKING_FOLDER;
+		MVS::Initialize("pyMVS", _nMaxThreads);
 		MVS::OPTDENSE::init();
+	}
+	~Scene() {
+		MVS::Finalize();
 	}
 
 	bool pyLoad(const std::string& fileName, bool bImport=false) {
@@ -83,11 +88,8 @@ public:
 		return ReconstructMesh(distInsert, bUseFreeSpaceSupport, bUseOnlyROI);
 	}
 	void pyCleanMesh(float fDecimate=1.f, float fRemoveSpurious=20.f, bool bRemoveSpikes=true, unsigned nCloseHoles=30, unsigned nSmoothMesh=2, float fEdgeLength=0.f, bool bCrop2ROI=false) {
-		if (bCrop2ROI && IsBounded()) {
-			const size_t numVertices = mesh.vertices.size();
-			const size_t numFaces = mesh.faces.size();
+		if (bCrop2ROI && IsBounded())
 			mesh.RemoveFacesOutside(obb);
-		}
 		mesh.Clean(fDecimate, fRemoveSpurious, bRemoveSpikes, nCloseHoles, nSmoothMesh, fEdgeLength, false);
 		mesh.Clean(1.f, 0.f, bRemoveSpikes, nCloseHoles, 0u, 0.f, false); // extra cleaning trying to close more holes
 		mesh.Clean(1.f, 0.f, false, 0u, 0u, 0.f, true); // extra cleaning to remove non-manifold problems created by closing holes

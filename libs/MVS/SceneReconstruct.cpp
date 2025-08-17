@@ -38,8 +38,8 @@
 #include <CGAL/Triangulation_cell_base_with_info_3.h>
 #include <CGAL/Spatial_sort_traits_adapter_3.h>
 #include <CGAL/AABB_tree.h>
-#include <CGAL/AABB_traits.h>
-#include <CGAL/AABB_triangle_primitive.h>
+#include <CGAL/AABB_traits_3.h>
+#include <CGAL/AABB_triangle_primitive_3.h>
 #include <CGAL/Polyhedron_3.h>
 
 using namespace MVS;
@@ -192,7 +192,7 @@ protected:
 
 // S T R U C T S ///////////////////////////////////////////////////
 
-// construct the mesh out of the dense point cloud using Delaunay tetrahedralization & graph-cut method
+// construct the mesh out of the dense point-cloud using Delaunay tetrahedralization & graph-cut method
 // see "Exploiting Visibility Information in Surface Reconstruction to Preserve Weakly Supported Surfaces", Jancosek and Pajdla, 2015
 namespace DELAUNAY {
 typedef CGAL::Exact_predicates_inexact_constructions_kernel kernel_t;
@@ -398,8 +398,7 @@ void fetchCellFacets(const delaunay_t& Tr, const std::vector<facet_t>& hullFacet
 	// find all facets on the convex-hull in camera's view
 	// create the 4 frustum planes
 	ASSERT(facets.empty());
-	typedef TFrustum<REAL,4> Frustum;
-	Frustum frustum(imageData.camera.P, imageData.width, imageData.height, 0, 1);
+	const TFrustum<REAL,4> frustum(imageData.camera.P, imageData.width, imageData.height, 0, 1);
 	// loop over all cells
 	const point_t ptOrigin(MVS2CGAL(imageData.camera.C));
 	for (const facet_t& face: hullFacets) {
@@ -1100,7 +1099,7 @@ bool Scene::ReconstructMesh(float distInsert, bool bUseFreeSpaceSupport, bool bU
 		// create graph
 		MaxFlow<cell_size_t,edge_cap_t> graph(delaunay.number_of_cells());
 		// set weights
-		constexpr edge_cap_t maxCap(FLT_MAX*0.0001f);
+		constexpr edge_cap_t maxCap(3.402823466e+34f/*FLT_MAX*0.0001f*/);
 		for (delaunay_t::All_cells_iterator ci=delaunay.all_cells_begin(), ce=delaunay.all_cells_end(); ci!=ce; ++ci) {
 			const cell_size_t ciID(ci->info());
 			const cell_info_t& ciInfo(infoCells[ciID]);
@@ -1157,9 +1156,7 @@ bool Scene::ReconstructMesh(float distInsert, bool bUseFreeSpaceSupport, bool bU
 	}
 
 	// fix non-manifold vertices and edges
-	for (unsigned i=0; i<nItersFixNonManifold; ++i)
-		if (!mesh.FixNonManifold())
-			break;
+	mesh.FixNonManifold();
 	return true;
 }
 /*----------------------------------------------------------------*/

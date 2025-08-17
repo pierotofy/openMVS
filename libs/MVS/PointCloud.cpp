@@ -48,6 +48,7 @@ PointCloud& MVS::PointCloud::Swap(PointCloud& rhs)
 	pointWeights.Swap(rhs.pointWeights);
 	normals.Swap(rhs.normals);
 	colors.Swap(rhs.colors);
+	labels.Swap(rhs.labels);
 	return *this;
 }
 /*----------------------------------------------------------------*/
@@ -59,27 +60,43 @@ void PointCloud::Release()
 	pointWeights.Release();
 	normals.Release();
 	colors.Release();
+	labels.Release();
 }
 /*----------------------------------------------------------------*/
 
 
 void PointCloud::RemovePoint(IDX idx)
 {
-	ASSERT(pointViews.IsEmpty() || pointViews.GetSize() == points.GetSize());
-	if (!pointViews.IsEmpty())
+	ASSERT(pointViews.empty() || pointViews.size() == points.size());
+	if (!pointViews.empty())
 		pointViews.RemoveAt(idx);
-	ASSERT(pointWeights.IsEmpty() || pointWeights.GetSize() == points.GetSize());
-	if (!pointWeights.IsEmpty())
+	ASSERT(pointWeights.empty() || pointWeights.size() == points.size());
+	if (!pointWeights.empty())
 		pointWeights.RemoveAt(idx);
-	ASSERT(normals.IsEmpty() || normals.GetSize() == points.GetSize());
-	if (!normals.IsEmpty())
+	ASSERT(normals.empty() || normals.size() == points.size());
+	if (!normals.empty())
 		normals.RemoveAt(idx);
-	ASSERT(colors.IsEmpty() || colors.GetSize() == points.GetSize());
-	if (!colors.IsEmpty())
+	ASSERT(colors.empty() || colors.size() == points.size());
+	if (!colors.empty())
 		colors.RemoveAt(idx);
+	ASSERT(labels.empty() || labels.size() == points.size());
+	if (!labels.empty())
+		labels.RemoveAt(idx);
 	points.RemoveAt(idx);
 }
-void PointCloud::RemovePointsOutside(const OBB3f& obb) {
+
+// remove multiple points based on the indices provided;
+// the indices must be sorted in ascending order
+void PointCloud::RemovePoints(IndexArr& indices)
+{
+	ASSERT(!indices.empty());
+	indices.Sort();
+	RFOREACH(idx, indices)
+		RemovePoint(indices[idx]);
+}
+
+void PointCloud::RemovePointsOutside(const OBB3f &obb)
+{
 	ASSERT(obb.IsValid());
 	RFOREACH(i, points)
 		if (!obb.Intersects(points[i]))
@@ -242,10 +259,11 @@ namespace BasicPLY {
 			uint32_t* pIndices;
 			float* pWeights;
 		} views;
+		PointCloud::Label label;
 		float confidence;
 		float scale;
 		static void InitLoadProps(PLY& ply, int elem_count,
-			PointCloud::PointArr& points, PointCloud::ColorArr& colors, PointCloud::NormalArr& normals, PointCloud::PointViewArr& views, PointCloud::PointWeightArr& weights)
+			PointCloud::PointArr& points, PointCloud::ColorArr& colors, PointCloud::NormalArr& normals, PointCloud::LabelArr& labels, PointCloud::PointViewArr& views, PointCloud::PointWeightArr& weights)
 		{
 			PLY::PlyElement* elm = ply.find_element(elem_names[0]);
 			const size_t nMaxProps(SizeOfArray(props));
@@ -259,11 +277,12 @@ namespace BasicPLY {
 				case 6: normals.resize((IDX)elem_count); break;
 				case 9: views.resize((IDX)elem_count); break;
 				case 10: weights.resize((IDX)elem_count); break;
+				case 11: labels.resize((IDX)elem_count); break;
 				}
 			}
 		}
 		static void InitSaveProps(PLY& ply, int elem_count,
-			bool bColors, bool bNormals, bool bViews, bool bWeights, bool bConfidence=false, bool bScale=false)
+			bool bColors, bool bNormals, bool bViews, bool bWeights, bool bLabel=false, bool bConfidence=false, bool bScale=false)
 		{
 			ply.describe_property(elem_names[0], 3, props+0);
 			if (bColors)
@@ -306,7 +325,7 @@ namespace BasicPLY {
 } // namespace BasicPLY
 } // namespace PointCloudInternal
 
-// load the dense point cloud from a PLY file
+// load the dense point-cloud from a PLY file
 bool PointCloud::Load(const String& fileName)
 {
 	TD_TIMER_STARTD();
@@ -327,7 +346,7 @@ bool PointCloud::Load(const String& fileName)
 		int elem_count;
 		LPCSTR elem_name = ply.setup_element_read(i, &elem_count);
 		if (PLY::equal_strings(BasicPLY::elem_names[0], elem_name)) {
-			BasicPLY::Vertex::InitLoadProps(ply, elem_count, points, colors, normals, pointViews, pointWeights);
+			BasicPLY::Vertex::InitLoadProps(ply, elem_count, points, colors, normals, labels, pointViews, pointWeights);
 			BasicPLY::Vertex vertex;
 			for (int v=0; v<elem_count; ++v) {
 				ply.get_element(&vertex);
@@ -336,6 +355,8 @@ bool PointCloud::Load(const String& fileName)
 					colors[v] = vertex.c;
 				if (!normals.empty())
 					normals[v] = vertex.n;
+				if (!labels.empty())
+					labels[v] = vertex.label;
 				if (!pointViews.empty()) {
 					ViewArr pv(vertex.views.num, vertex.views.pIndices);
 					pointViews[v].CopyOfRemove(pv);
@@ -358,10 +379,10 @@ bool PointCloud::Load(const String& fileName)
 	return true;
 } // Load
 
-// save the dense point cloud as PLY file
+// save the dense point-cloud as PLY file
 bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bool bBinary) const
 {
-	if (points.empty())
+	if (IsEmpty())
 		return false;
 	TD_TIMER_STARTD();
 
@@ -377,7 +398,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 
 	// write the header
 	BasicPLY::Vertex::InitSaveProps(ply, (int)points.size(), !colors.empty(), !normals.empty(),
-		bViews && !pointViews.empty(), bViews && !pointWeights.empty());
+		bViews && !pointViews.empty(), bViews && !pointWeights.empty(), bViews && !labels.empty());
 	if (!ply.header_complete())
 		return false;
 
@@ -390,6 +411,8 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 			vertex.c = colors[i];
 		if (!normals.empty())
 			vertex.n = normals[i];
+		if (!labels.empty())
+			vertex.label = labels[i];
 		if (!pointViews.empty()) {
 			vertex.views.num = pointViews[i].size();
 			vertex.views.pIndices = pointViews[i].data();
@@ -406,7 +429,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 	return true;
 } // Save
 
-// save the dense point cloud having >=N views as PLY file
+// save the dense point-cloud having >=N views as PLY file
 bool PointCloud::SaveNViews(const String& fileName, uint32_t minViews, bool bLegacyTypes, bool bBinary) const
 {
 	if (points.IsEmpty())
@@ -463,7 +486,7 @@ bool PointCloud::SaveNViews(const String& fileName, uint32_t minViews, bool bLeg
 	return true;
 } // SaveNViews
 
-// save the dense point cloud + scale as PLY file
+// save the dense point-cloud + scale as PLY file
 bool PointCloud::SaveWithScale(const String& fileName, const ImageArr& images, float scaleMult, bool bLegacyTypes, bool bBinary) const
 {
 	if (points.empty())
@@ -482,7 +505,7 @@ bool PointCloud::SaveWithScale(const String& fileName, const ImageArr& images, f
 		return false;
 
 	// export the array of 3D points
-	BasicPLY::Vertex::InitSaveProps(ply, (int)points.size(), !colors.empty(), !normals.empty(), false, false, true, true);
+	BasicPLY::Vertex::InitSaveProps(ply, (int)points.size(), !colors.empty(), !normals.empty(), false, false, false, true, true);
 	if (!ply.header_complete())
 		return false;
 	BasicPLY::Vertex vertex;
@@ -542,7 +565,7 @@ bool PointCloud::SaveWithScale(const String& fileName, const ImageArr& images, f
 /*----------------------------------------------------------------*/
 
 
-// print various statistics about the point cloud
+// print various statistics about the point-cloud
 void PointCloud::PrintStatistics(const Image* pImages, const OBB3f* pObb) const
 {
 	String strPoints;

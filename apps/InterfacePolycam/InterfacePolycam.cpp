@@ -60,8 +60,17 @@ String strConfigFileName;
 boost::program_options::variables_map vm;
 } // namespace OPT
 
+class Application {
+public:
+	Application() {}
+	~Application() { Finalize(); }
+
+	bool Initialize(size_t argc, LPCTSTR* argv);
+	void Finalize();
+}; // Application
+
 // initialize and parse the command line parameters
-bool Initialize(size_t argc, LPCTSTR* argv)
+bool Application::Initialize(size_t argc, LPCTSTR* argv)
 {
 	// initialize log and console
 	OPEN_LOG();
@@ -128,8 +137,8 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 	LOG(_T("Command line: ") APPNAME _T("%s"), Util::CommandLineToString(argc, argv).c_str());
 
 	// validate input
-	Util::ensureValidFolderPath(OPT::strInputFileName);
 	const bool bInvalidCommand(OPT::strInputFileName.empty());
+	Util::ensureValidFolderPath(OPT::strInputFileName);
 	if (OPT::vm.count("help") || bInvalidCommand) {
 		boost::program_options::options_description visible("Available options");
 		visible.add(generic).add(config);
@@ -143,27 +152,14 @@ bool Initialize(size_t argc, LPCTSTR* argv)
 	if (OPT::strOutputFileName.empty())
 		OPT::strOutputFileName = "scene" MVS_EXT;
 
-	// initialize global options
-	Process::setCurrentProcessPriority((Process::Priority)OPT::nProcessPriority);
-	#ifdef _USE_OPENMP
-	if (OPT::nMaxThreads != 0)
-		omp_set_num_threads(OPT::nMaxThreads);
-	#endif
-
-	#ifdef _USE_BREAKPAD
-	// start memory dumper
-	MiniDumper::Create(APPNAME, WORKING_FOLDER);
-	#endif
+	MVS::Initialize(APPNAME, OPT::nMaxThreads, OPT::nProcessPriority);
 	return true;
 }
 
 // finalize application instance
-void Finalize()
+void Application::Finalize()
 {
-	#if TD_VERBOSE != TD_VERBOSE_OFF
-	// print memory statistics
-	Util::LogMemoryInfo();
-	#endif
+	MVS::Finalize();
 
 	CLOSE_LOGFILE();
 	CLOSE_LOGCONSOLE();
@@ -229,6 +225,7 @@ bool ParseImage(Scene& scene, const String& imagePath, const String& cameraPath,
 	const Point3d t = P.topRightCorner<3, 1>().eval();
 	pose.C = pose.R.t() * (-t);
 	imageData.camera = platform.GetCamera(imageData.cameraID, imageData.poseID);
+	++scene.nCalibratedImages;
 	// set image neighbors if available
 	nlohmann::json::const_iterator itNeighbors = data.find("neighbors");
 	if (itNeighbors != data.end()) {
@@ -241,52 +238,56 @@ bool ParseImage(Scene& scene, const String& imagePath, const String& cameraPath,
 		}
 	}
 	// load and convert depth-map
-	DepthMap depthMap; {
-		constexpr double depthScale{1000.0};
-		const cv::Mat imgDepthMap = cv::imread(depthPath, cv::IMREAD_ANYDEPTH);
-		if (imgDepthMap.empty())
+	if (!depthPath.empty()) {
+		DepthMap depthMap; {
+			constexpr double depthScale{1000.0};
+			const cv::Mat imgDepthMap = cv::imread(depthPath, cv::IMREAD_ANYDEPTH);
+			if (imgDepthMap.empty())
+				return false;
+			imgDepthMap.convertTo(depthMap, CV_32FC1, 1.0/depthScale);
+		}
+		IIndexArr IDs = {imageData.ID};
+		IDs.JoinFunctor(imageData.neighbors.size(), [&imageData](IIndex i) {
+			return imageData.neighbors[i].ID;
+		});
+		double dMin, dMax;
+		cv::minMaxIdx(depthMap, &dMin, &dMax, NULL, NULL, depthMap > 0);
+		const NormalMap normalMap;
+		const ConfidenceMap confMap;
+		const ViewsMap viewsMap;
+		if (!ExportDepthDataRaw(MAKE_PATH(String::FormatString("depth%04u.dmap", imageData.ID)),
+			imageData.name, IDs, resolution,
+			camera.K, pose.R, pose.C,
+			(float)dMin, (float)dMax,
+			depthMap, normalMap, confMap, viewsMap))
 			return false;
-		imgDepthMap.convertTo(depthMap, CV_32FC1, 1.0/depthScale);
 	}
-	IIndexArr IDs = {imageData.ID};
-	IDs.JoinFunctor(imageData.neighbors.size(), [&imageData](IIndex i) {
-		return imageData.neighbors[i].ID;
-	});
-	double dMin, dMax;
-	cv::minMaxIdx(depthMap, &dMin, &dMax, NULL, NULL, depthMap > 0);
-	const NormalMap normalMap;
-	const ConfidenceMap confMap;
-	const ViewsMap viewsMap;
-	if (!ExportDepthDataRaw(MAKE_PATH(String::FormatString("depth%04u.dmap", imageData.ID)),
-		imageData.name, IDs, resolution,
-		camera.K, pose.R, pose.C,
-		(float)dMin, (float)dMax,
-		depthMap, normalMap, confMap, viewsMap))
-		return false;
 	return true;
 }
 
 // parse scene stored in Polycam format
 bool ParseScene(Scene& scene, const String& scenePath)
 {
-	#ifdef _SUPPORT_CPP17
-	size_t numCorrectedFolders(0), numFolders(0);
+	#if defined(_SUPPORT_CPP17) && (!defined(__GNUC__) || (__GNUC__ > 7))
+	size_t numCorrectedFolders(0), numCorrectedDepthFolders(0), numFolders(0), numDepthFolders(0);
 	for (const auto& file: std::filesystem::directory_iterator(scenePath.c_str())) {
 		if (file.path().stem() == "corrected_cameras" ||
-			file.path().stem() == "corrected_depth" ||
 			file.path().stem() == "corrected_images")
 			++numCorrectedFolders;
-		else
-		if (file.path().stem() == "cameras" ||
-			file.path().stem() == "depth" ||
+		else if (file.path().stem() == "corrected_depth")
+			++numCorrectedDepthFolders;
+		else if (file.path().stem() == "cameras" ||
 			file.path().stem() == "images")
 			++numFolders;
+		else if (file.path().stem() == "depth")
+			++numDepthFolders;
 	}
-	if (numFolders != 3) {
+	if (numFolders != 2) {
 		VERBOSE("Invalid scene folder");
 		return false;
 	}
-	if (numCorrectedFolders == 3) {
+	scene.nCalibratedImages = 0;
+	if (numCorrectedFolders == 2) {
 		// corrected data
 		CLISTDEFIDX(String, IIndex) imagePaths;
 		for (const auto& file: std::filesystem::directory_iterator((scenePath + "corrected_images").c_str()))
@@ -301,7 +302,7 @@ bool ParseScene(Scene& scene, const String& scenePath)
 		for (const String& imagePath: imagePaths) {
 			const String imageName = Util::getFileName(imagePath);
 			const String cameraPath(scenePath + "corrected_cameras" + PATH_SEPARATOR_STR + imageName + JSON_EXT);
-			const String depthPath(scenePath + "corrected_depth" + PATH_SEPARATOR_STR + imageName + DEPTH_EXT);
+			const String depthPath(numCorrectedDepthFolders ? scenePath + "corrected_depth" + PATH_SEPARATOR_STR + imageName + DEPTH_EXT : String());
 			if (!ParseImage(scene, imagePath, cameraPath, depthPath, mapImageName))
 				return false;
 		}
@@ -320,7 +321,7 @@ bool ParseScene(Scene& scene, const String& scenePath)
 		for (const String& imagePath: imagePaths) {
 			const String imageName = Util::getFileName(imagePath);
 			const String cameraPath(scenePath + "cameras" + PATH_SEPARATOR_STR + imageName + JSON_EXT);
-			const String depthPath(scenePath + "depth" + PATH_SEPARATOR_STR + imageName + DEPTH_EXT);
+			const String depthPath(numDepthFolders ? scenePath + "depth" + PATH_SEPARATOR_STR + imageName + DEPTH_EXT : String());
 			if (!ParseImage(scene, imagePath, cameraPath, depthPath, mapImageName))
 				return false;
 		}
@@ -340,7 +341,8 @@ int main(int argc, LPCTSTR* argv)
 	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);// | _CRTDBG_CHECK_ALWAYS_DF);
 	#endif
 
-	if (!Initialize(argc, argv))
+	Application application;
+	if (!application.Initialize(argc, argv))
 		return EXIT_FAILURE;
 
 	TD_TIMER_START();
@@ -357,8 +359,6 @@ int main(int argc, LPCTSTR* argv)
 	VERBOSE("Exported data: %u platforms, %u cameras, %u poses, %u images (%s)",
 			scene.platforms.size(), scene.images.size(), scene.images.size(), scene.images.size(),
 			TD_TIMER_GET_FMT().c_str());
-
-	Finalize();
 	return EXIT_SUCCESS;
 }
 /*----------------------------------------------------------------*/

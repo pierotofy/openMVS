@@ -211,6 +211,27 @@ public:
 			width, height );
 	}
 
+	// return the OpenGL projection matrix corresponding to K:
+	// - flip: if true, flip the y axis to match OpenGL image convention
+	template<typename TYPE>
+	static inline TMatrix<TYPE,4,4> ProjectionMatrixOpenGL(const TMatrix<TYPE,3,3>& K, const cv::Size& size, TYPE nearZ, TYPE farZ, bool flip = true) {
+		// based on https://strawlab.org/2011/11/05/augmented-reality-with-OpenGL
+		const TYPE fx(K(0,0)), fy(K(1,1));
+		const TYPE cx(K(0,2)+0.5f), cy(K(1,2)+0.5f);
+		const TYPE skew(K(0,1));
+		const TYPE ihw(TYPE(2)/size.width), ihh(TYPE(2)/size.height);
+		const TYPE iy(flip ? TYPE(-1) : TYPE(1));
+		const TYPE ilen(TYPE(1)/(farZ-nearZ));
+		return TMatrix<TYPE,4,4>(
+			fx*ihw, skew*ihw, cx*ihw-TYPE(1), 0,
+			0, iy*fy*ihh, iy*(cy*ihh-TYPE(1)), 0,
+			0, 0, (farZ+nearZ)*ilen, -TYPE(2)*farZ*nearZ*ilen,
+			0, 0, 1, 0);
+	}
+	inline Matrix4x4 GetProjectionMatrixOpenGL(const cv::Size& size, REAL nearZ, REAL farZ, bool flipY = true) const {
+		return ProjectionMatrixOpenGL(K, size, nearZ, farZ, flipY);
+	}
+
 	// normalize inhomogeneous 2D point by the given camera intrinsics K
 	// K is assumed to be the [3,3] triangular matrix with: fx, fy, s, cx, cy and scale 1
 	template <typename TYPE>
@@ -251,6 +272,11 @@ public:
 
 	Camera& operator= (const CameraIntern& camera);
 
+	Camera GetScaled(REAL s) const; // return a camera scaled by the given factor
+	Camera GetScaled(const cv::Size& size, const cv::Size& newSize) const; // return a camera scaled to the given resolution
+
+	Matrix4x4 GetP() const; // the composed projection matrix (4x4) assuming valid P
+	Matrix4x4 GetRC() const; // the composed transform matrix (4x4)
 	void ComposeP_RC(); // compose P from R and C only
 	void ComposeP(); // compose P from K, R and C
 	void DecomposeP_RC(); // decompose P in R and C, keep K unchanged
@@ -414,39 +440,45 @@ public:
 
 	// compute the projection scale in this camera of the given world point
 	template <typename TYPE>
+	inline TYPE GetFootprintImage(TYPE depth) const {
+		return static_cast<TYPE>(GetFocalLength() / depth);
+	}
+	template <typename TYPE>
 	inline TYPE GetFootprintImage(const TPoint3<TYPE>& X) const {
-		#if 0
-		const TYPE fSphereRadius(1);
-		const TPoint3<TYPE> camX(TransformPointW2C(X));
-		return norm(TransformPointC2I(TPoint3<TYPE>(camX.x+fSphereRadius,camX.y,camX.z))-TransformPointC2I(camX));
-		#else
-		return static_cast<TYPE>(GetFocalLength() / PointDepth(X));
-		#endif
+		return GetFootprintImage(PointDepth(X));
 	}
 	// compute the surface the projected pixel covers at the given depth
 	template <typename TYPE>
-	inline TYPE GetFootprintWorldSq(const TPoint2<TYPE>& x, TYPE depth) const {
-		#if 0
-		return SQUARE(GetFocalLength());
-		#else
-		// improved version of the above
-		return SQUARE(depth) / (SQUARE(GetFocalLength()) + normSq(TransformPointI2V(x)));
-		#endif
-	}
-	template <typename TYPE>
-	inline TYPE GetFootprintWorld(const TPoint2<TYPE>& x, TYPE depth) const {
-		return depth / SQRT(SQUARE(GetFocalLength()) + normSq(TransformPointI2V(x)));
+	inline TYPE GetFootprintWorld(TYPE depth) const {
+		return static_cast<TYPE>(depth / GetFocalLength());
 	}
 	// same as above, but the 3D point is given
 	template <typename TYPE>
-	inline TYPE GetFootprintWorldSq(const TPoint3<TYPE>& X) const {
-		const TPoint3<TYPE> camX(TransformPointW2C(X));
-		return GetFootprintWorldSq(TPoint2<TYPE>(camX.x/camX.z,camX.y/camX.z), camX.z);
-	}
-	template <typename TYPE>
 	inline TYPE GetFootprintWorld(const TPoint3<TYPE>& X) const {
-		const TPoint3<TYPE> camX(TransformPointW2C(X));
-		return GetFootprintWorld(TPoint2<TYPE>(camX.x/camX.z,camX.y/camX.z), camX.z);
+		return GetFootprintWorld(PointDepth(X));
+	}
+
+	// create the 4 image points corresponding to the image corners
+	Point2Arr GetImageCorners(const cv::Size& size) const {
+		const int maxX = size.width - 1;
+		const int maxY = size.height - 1;
+		return Point2Arr{
+			Point2(0, 0),
+			Point2(0, maxY),
+			Point2(maxX, maxY),
+			Point2(maxX, 0)
+		};
+	}
+	// compute the normalized rays in camera space corresponding to the image corners
+	Point3Arr GetCameraCornerRays(const cv::Size& size, bool bNormalize=true) const {
+		const Point2Arr corners(GetImageCorners(size));
+		Point3Arr result(4);
+		for (int i = 0; i < 4; ++i) {
+			result[i] = RayPoint(corners[i]);
+			if (bNormalize)
+				normalize(result[i]);
+		}
+		return result;
 	}
 
 	#ifdef _USE_BOOST

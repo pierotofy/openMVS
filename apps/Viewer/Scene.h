@@ -1,7 +1,7 @@
 /*
  * Scene.h
  *
- * Copyright (c) 2014-2015 SEACAVE
+ * Copyright (c) 2014-2025 SEACAVE
  *
  * Author(s):
  *
@@ -29,24 +29,13 @@
  *      containing it.
  */
 
-#ifndef _VIEWER_SCENE_H_
-#define _VIEWER_SCENE_H_
-
-
-// I N C L U D E S /////////////////////////////////////////////////
+#pragma once
 
 #include "Window.h"
 
-
-// D E F I N E S ///////////////////////////////////////////////////
-
-
-// S T R U C T S ///////////////////////////////////////////////////
-
 namespace VIEWER {
 
-class Scene
-{
+class Scene {
 public:
 	typedef MVS::PointCloud::Octree OctreePoints;
 	typedef MVS::Mesh::Octree OctreeMesh;
@@ -56,18 +45,16 @@ public:
 	String name;
 
 	String sceneName;
-	String meshName;
+	String geometryName;
+	bool geometryMesh;
+	bool estimateSfMNormals;
+	bool estimateSfMPatches;
 	MVS::Scene scene;
 	Window window;
-	ImageArr images; // scene photos
-	ImageArr textures; // mesh textures
+	ImageArr images; // scene photos (only valid)
 
 	OctreePoints octPoints;
 	OctreeMesh octMesh;
-	Point3fArr obbPoints;
-
-	GLuint listPointCloud;
-	GLuint listMesh;
 
 	// multi-threading
 	static SEACAVE::EventQueue events; // internal events queue (processed by the working threads)
@@ -77,33 +64,49 @@ public:
 	explicit Scene(ARCHIVE_TYPE _nArchiveType = ARCHIVE_MVS);
 	~Scene();
 
-	void Empty();
+	bool Initialize(const cv::Size& size, const String& windowName, 
+				   const String& fileName = String(), const String& geometryFileName = String());
+	void Run();
+
+	void Reset();
 	void Release();
-	void ReleasePointCloud();
-	void ReleaseMesh();
+
 	inline bool IsValid() const { return window.IsValid(); }
 	inline bool IsOpen() const { return IsValid() && !scene.IsEmpty(); }
 	inline bool IsOctreeValid() const { return !octPoints.IsEmpty() || !octMesh.IsEmpty(); }
 
-	bool Init(const cv::Size&, LPCTSTR windowName, LPCTSTR fileName=NULL, LPCTSTR meshFileName=NULL);
-	bool Open(LPCTSTR fileName, LPCTSTR meshFileName=NULL);
-	bool Save(LPCTSTR fileName=NULL, bool bRescaleImages=false);
-	bool Export(LPCTSTR fileName, LPCTSTR exportType=NULL) const;
-	void CompilePointCloud();
-	void CompileMesh();
-	void CompileBounds();
+	// Scene management
+	bool Open(const String& fileName, String geometryFileName = {});
+	bool Save(const String& fileName = String(), bool bRescaleImages = false);
+	bool Export(const String& fileName, const String& exportType = String()) const;
 
-	void Draw();
-	void Loop();
+	// Geometry operations
+	void RemoveSelectedGeometry();
+	void SetROIFromSelection(bool aabb = false);
+	MVS::Scene CropToPoints(const MVS::PointCloud::IndexArr& selectedPointIndices, unsigned minPoints = 20) const;
 
-	void Center();
+	// Getters
+	const MVS::Scene& GetScene() const { return scene; }
+	MVS::Scene& GetScene() { return scene; }
+	const ImageArr& GetImages() const { return images; } 
+	ImageArr& GetImages() { return images; }
+	Window& GetWindow() { return window; }
+	MVS::IIndex ImageIdxMVS2Viewer(MVS::IIndex idx) const;
+
+	// Event handlers
+	void OnCenterScene(const Point3f& center);
+	void OnCastRay(const Ray3d&, int button, int action, int mods);
+	void OnSetCameraViewMode(MVS::IIndex camID);
+	void OnSelectPointsByCamera(bool highlightCameraVisiblePoints);
+
+private:
+	void CropToBounds();
 	void TogleSceneBox();
-	void CastRay(const Ray3&, int);
-protected:
+
+	// Internal geometry operation
+	void UpdateGeometryAfterModification();
+
 	static void* ThreadWorker(void*);
 };
-/*----------------------------------------------------------------*/
 
 } // namespace VIEWER
-
-#endif // _VIEWER_SCENE_H_

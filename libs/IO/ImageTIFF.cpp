@@ -373,14 +373,14 @@ void CImageTIFF::Close()
 }
 /*----------------------------------------------------------------*/
 
-HRESULT CImageTIFF::ReadHeader()
+bool CImageTIFF::ReadHeader()
 {
 	TIFF* tif = static_cast<TIFF*>(m_state);
 	if (!tif) {
 		tif = TIFFStreamOpen("ReadTIFF", (ISTREAM*)m_pStream);
 		if (!tif) {
 			LOG(LT_IMAGE, "error: unsupported TIFF image");
-			return _INVALIDFILE;
+			return false;
 		}
 	}
 	m_state = tif;
@@ -401,6 +401,13 @@ HRESULT CImageTIFF::ReadHeader()
 		m_level     = 0;
 		m_stride    = ncn;
 
+		if ((bpp == 32 && ncn == 3) || photometric == PHOTOMETRIC_LOGLUV) {
+			// this is HDR format with 3 floats per pixel
+			//TODO: implement
+			ASSERT("error: not implemented" == NULL);
+			Close();
+			return false;
+		}
 		if (bpp > 8 &&
 			((photometric != 2 && photometric != 1) ||
 				(ncn != 1 && ncn != 3 && ncn != 4)))
@@ -453,19 +460,19 @@ HRESULT CImageTIFF::ReadHeader()
 			ASSERT("error: not implemented" == NULL);
 			LOG(LT_IMAGE, "error: unsupported TIFF image");
 			Close();
-			return _INVALIDFILE;
+			return false;
 		}
 		m_lineWidth = m_width * m_stride;
 
-		return _OK;
+		return true;
 	}
 
 	Close();
-	return _FAIL;
+	return false;
 } // ReadHeader
 /*----------------------------------------------------------------*/
 
-HRESULT CImageTIFF::ReadData(void* pData, PIXELFORMAT dataFormat, Size nStride, Size lineWidth)
+bool CImageTIFF::ReadData(void* pData, PIXELFORMAT dataFormat, Size nStride, Size lineWidth)
 {
 	if (m_state && m_width && m_height) {
 		TIFF* tif = (TIFF*)m_state;
@@ -483,7 +490,7 @@ HRESULT CImageTIFF::ReadData(void* pData, PIXELFORMAT dataFormat, Size nStride, 
 			char errmsg[1024];
 			if (!TIFFRGBAImageOK(tif, errmsg)) {
 				Close();
-				return _INVALIDFILE;
+				return false;
 			}
 
 			// Simplified
@@ -513,21 +520,21 @@ HRESULT CImageTIFF::ReadData(void* pData, PIXELFORMAT dataFormat, Size nStride, 
 	}
 
 	Close();
-	return _FAIL;
+	return false;
 } // Read
 /*----------------------------------------------------------------*/
 
-HRESULT CImageTIFF::WriteHeader(PIXELFORMAT imageFormat, Size width, Size height, BYTE numLevels)
+bool CImageTIFF::WriteHeader(PIXELFORMAT imageFormat, Size width, Size height, BYTE numLevels)
 {
 	//TODO: to implement the TIFF encoder
-	return _OK;
+	return true;
 } // WriteHeader
 /*----------------------------------------------------------------*/
 
-HRESULT CImageTIFF::WriteData(void* pData, PIXELFORMAT dataFormat, Size nStride, Size lineWidth)
+bool CImageTIFF::WriteData(void* pData, PIXELFORMAT dataFormat, Size nStride, Size lineWidth)
 {
 	//TODO: to implement the TIFF encoder
-	return _OK;
+	return true;
 } // WriteData
 /*----------------------------------------------------------------*/
 
