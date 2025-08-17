@@ -30,6 +30,22 @@
 #pragma warning (push)
 #pragma warning (disable : 4244) // 'argument': conversion from '__int64' to 'int', possible loss of data
 #endif
+
+#if defined(__GNUC__) && (__GNUC__ < 10)
+// Add std::ssize for older GCC versions
+namespace std {
+	template<class C>
+	constexpr auto ssize(const C& c)
+		-> std::common_type_t<std::ptrdiff_t,
+							std::make_signed_t<decltype(c.size())>>
+	{
+		using R = std::common_type_t<std::ptrdiff_t,
+									std::make_signed_t<decltype(c.size())>>;
+		return static_cast<R>(c.size());
+	}
+}
+#endif
+
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Sparse>

@@ -135,7 +135,7 @@ namespace cv { namespace gpu = cuda; }
 #undef malloc
 #pragma push_macro("free")
 #undef free
-#include <nanoflann.hpp>
+#include "nanoflann.hpp"
 #pragma pop_macro("free")
 #pragma pop_macro("malloc")
 

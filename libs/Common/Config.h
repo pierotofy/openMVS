@@ -232,9 +232,9 @@
 #ifdef _MSC_VER
 #	define DEBUG_BREAK __debugbreak
 #else
-#if defined(__has_builtin) && __has_builtin(__builtin_debugtrap)
-#	define DEBUG_BREAK __builtin_debugtrap
-#else
+// #if defined(__has_builtin) && __has_builtin(__builtin_debugtrap)
+// #	define DEBUG_BREAK __builtin_debugtrap
+// #else
 # if defined(__i386__) || defined(__x86_64__)
 __inline__ static void trap_instruction() { __asm__ volatile("int $3"); }
 #	define DEBUG_BREAK trap_instruction
@@ -250,7 +250,7 @@ __inline__ static void trap_instruction() { __asm__ volatile("brk #0"); }
 #	define DEBUG_BREAK __builtin_trap
 # endif
 #endif
-#endif
+// #endif
 
 #define PRINT_ASSERT_MSG(exp, ...)
 

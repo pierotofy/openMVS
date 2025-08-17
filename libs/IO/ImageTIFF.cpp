@@ -496,13 +496,13 @@ bool CImageTIFF::ReadData(void* pData, PIXELFORMAT dataFormat, Size nStride, Siz
 			// Simplified
 			if (!TIFFReadRGBAImageOriented(tif, m_width, m_height, (uint32*)buffer, ORIENTATION_TOPLEFT, 0)){
 				Close();
-				return _INVALIDFILE;
+				return false;
 			}
 		}else if (m_format == PF_GRAYU16 || m_format == PF_GRAYF32 || m_format == PF_R32G32B32 || m_format == PF_R16G16B16){
 			for (uint32 y = 0; y < m_height; y++, buffer += m_lineWidth){
 				if (!TIFFReadScanline(tif, buffer, y, 0)){
 					Close();
-					return _INVALIDFILE;
+					return false;
 				}
 			}
 			buffer = _buffer.Begin();
@@ -512,11 +512,11 @@ bool CImageTIFF::ReadData(void* pData, PIXELFORMAT dataFormat, Size nStride, Siz
 		if (dataFormat != m_format || nStride != m_stride){
 			if (!FilterFormat(pData, dataFormat, nStride, buffer, m_format, m_stride, m_width * m_height)) {
 				Close();
-				return _FAIL;
+				return false;
 			}
 		}
 
-		return _OK;
+		return true;
 	}
 
 	Close();
