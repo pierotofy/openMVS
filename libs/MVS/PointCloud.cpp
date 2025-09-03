@@ -434,8 +434,8 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 			vertex.c = colors[i];
 		if (!normals.empty()){
 			vertex.n = normals[i];
-			for (size_t i = 0; i < 3; i++){
-				vertex.n[i] *= conf;
+			for (size_t j = 0; j < 3; j++){
+				vertex.n[j] *= conf;
 			}
 		}
 		if (!labels.empty())
