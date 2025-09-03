@@ -380,7 +380,7 @@ bool PointCloud::Load(const String& fileName)
 } // Load
 
 // save the dense point-cloud as PLY file
-bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bool bBinary) const
+bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bool bBinary, const ImageArr *images) const
 {
 	if (IsEmpty())
 		return false;
@@ -407,10 +407,37 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 	FOREACH(i, points) {
 		// export the vertex position, color, normal and views
 		vertex.p = points[i];
+
+		// ODM: multiply normals by confidence
+		float conf = 1.0f;
+
+		if (!normals.empty()){
+			if (pointWeights.empty()) {
+				conf = (float)pointViews[i].size();
+			} else if (images != nullptr) {
+				float scaleWeightBest = FLT_MAX;
+				FOREACH(j, pointViews[i]) {
+					const IIndex idxView = pointViews[i][j];
+					const float scale((float)(*images)[idxView].camera.GetFootprintWorld(Cast<REAL>(vertex.p)));
+					ASSERT(scale > 0);
+					const float vConf(pointWeights[i][j]);
+					const float scaleWeight(scale/vConf);
+					if (scaleWeightBest > scaleWeight) {
+						scaleWeightBest = scaleWeight;
+						conf = vConf;
+					}
+				}
+			}
+		}
+
 		if (!colors.empty())
 			vertex.c = colors[i];
-		if (!normals.empty())
+		if (!normals.empty()){
 			vertex.n = normals[i];
+			for (size_t i = 0; i < 3; i++){
+				vertex.n[i] *= conf;
+			}
+		}
 		if (!labels.empty())
 			vertex.label = labels[i];
 		if (!pointViews.empty()) {
@@ -421,6 +448,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 			ASSERT(vertex.views.num == pointWeights[i].size());
 			vertex.views.pWeights = pointWeights[i].data();
 		}
+
 		ply.put_element(&vertex);
 	}
 	ASSERT(ply.get_current_element_count() == (int)points.size());

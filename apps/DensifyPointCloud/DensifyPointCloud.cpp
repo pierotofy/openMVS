@@ -433,8 +433,8 @@ int main(int argc, LPCTSTR* argv)
 		// filter point-cloud based on camera-point visibility intersections
 		scene.PointCloudFilter(OPT::thFilterPointCloud);
 		const String baseFileName(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName))+_T("_filtered"));
-		scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
-		scene.pointcloud.Save(baseFileName+_T(".ply"));
+		// scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
+		scene.pointcloud.Save(baseFileName+_T(".ply"), false, false, true, &scene.images);
 		return EXIT_SUCCESS;
 	}
 	if (OPT::nExportNumViews && scene.pointcloud.IsValid()) {
