@@ -739,7 +739,7 @@ public:
 		volatile size_t processed; // number of jobs already processed
 		CriticalSection cs; // multi-threading safety only for the incremental operator
 
-		Progress(const String& _msg, size_t _total, Timer::Type _slp=100/*ms*/)
+		Progress(const String& _msg, size_t _total, Timer::Type _slp=2000/*ms*/)
 			: msg(_msg), total(_total), slp(_slp), start(Timer::GetSysTime()), lastElapsed(0), lastMsgLen(0), processed(0) {}
 		~Progress() { if (processed) close(); }
 
