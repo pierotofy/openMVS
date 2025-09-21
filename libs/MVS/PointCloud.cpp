@@ -430,6 +430,10 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 			}
 		}
 
+		if (conf < 0.01f || std::isnan(conf)) {
+			conf = 0.01f;
+		}
+
 		if (!colors.empty())
 			vertex.c = colors[i];
 		if (!normals.empty()){
