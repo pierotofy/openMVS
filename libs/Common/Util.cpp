@@ -595,6 +595,8 @@ bool OSSupportsAVX()
 // print details about the current build and PC
 void Util::LogBuild()
 {
+	return; // Dont output anything
+	
 	LOG(_T("OpenMVS %s v" OpenMVS_VERSION),
 		#ifdef _ENVIRONMENT64
 		_T("x64")
