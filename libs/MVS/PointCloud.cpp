@@ -409,7 +409,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 		vertex.p = points[i];
 
 		// ODM: multiply normals by confidence
-		float conf = 1.0f;
+		float conf = 0.0f;
 
 		if (!normals.empty()){
 			if (pointWeights.empty()) {
@@ -430,8 +430,8 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 			}
 		}
 
-		if (conf < 0.01f || std::isnan(conf)) {
-			conf = 0.01f;
+		if (std::isnan(conf)) {
+			conf = 0.0f;
 		}
 
 		if (!colors.empty())
@@ -439,7 +439,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 		if (!normals.empty()){
 			vertex.n = normals[i];
 			for (size_t j = 0; j < 3; j++){
-				vertex.n[j] *= conf;
+				vertex.n[j] *= (1.0f + conf);
 			}
 		}
 		if (!labels.empty())
