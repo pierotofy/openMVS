@@ -430,7 +430,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 			}
 		}
 
-		if (std::isnan(conf)) {
+		if (std::isnan(conf) || conf < 0.0f) {
 			conf = 0.0f;
 		}
 
