@@ -434,7 +434,7 @@ int main(int argc, LPCTSTR* argv)
 		scene.PointCloudFilter(OPT::thFilterPointCloud);
 		const String baseFileName(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName))+_T("_filtered"));
 		// scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
-		scene.pointcloud.Save(baseFileName+_T(".ply"), false, false, true, &scene.images);
+		scene.pointcloud.Save(baseFileName+_T(".ply"));
 		return EXIT_SUCCESS;
 	}
 	if (OPT::nExportNumViews && scene.pointcloud.IsValid()) {

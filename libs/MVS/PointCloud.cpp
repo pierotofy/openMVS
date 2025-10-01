@@ -380,7 +380,7 @@ bool PointCloud::Load(const String& fileName)
 } // Load
 
 // save the dense point-cloud as PLY file
-bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bool bBinary, const ImageArr *images) const
+bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bool bBinary) const
 {
 	if (IsEmpty())
 		return false;
@@ -408,30 +408,13 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 		// export the vertex position, color, normal and views
 		vertex.p = points[i];
 
-		// ODM: multiply normals by confidence
-		float conf = 0.0f;
+		// ODM: scale normals
+		float scale = 1.0f;
 
-		if (!normals.empty()){
-			if (pointWeights.empty()) {
-				conf = (float)pointViews[i].size();
-			} else if (images != nullptr) {
-				float scaleWeightBest = FLT_MAX;
-				FOREACH(j, pointViews[i]) {
-					const IIndex idxView = pointViews[i][j];
-					const float scale((float)(*images)[idxView].camera.GetFootprintWorld(Cast<REAL>(vertex.p)));
-					ASSERT(scale > 0);
-					const float vConf(pointWeights[i][j]);
-					const float scaleWeight(scale/vConf);
-					if (scaleWeightBest > scaleWeight) {
-						scaleWeightBest = scaleWeight;
-						conf = vConf;
-					}
-				}
-			}
-		}
-
-		if (std::isnan(conf) || conf < 0.0f) {
-			conf = 0.0f;
+		if (pointViews[i].size() <= 2){
+			scale = 0.5f;
+		}else if (pointViews[i].size() == 3){
+			scale = 0.9f;
 		}
 
 		if (!colors.empty())
@@ -439,7 +422,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 		if (!normals.empty()){
 			vertex.n = normals[i];
 			for (size_t j = 0; j < 3; j++){
-				vertex.n[j] *= (1.0f + conf);
+				vertex.n[j] *= scale;
 			}
 		}
 		if (!labels.empty())
