@@ -412,9 +412,7 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 		float conf = 0.0f;
 
 		if (!normals.empty()){
-			if (pointWeights.empty()) {
-				conf = (float)pointViews[i].size();
-			} else if (images != nullptr) {
+			if (!pointWeights.empty() && images != nullptr) {
 				float scaleWeightBest = FLT_MAX;
 				FOREACH(j, pointViews[i]) {
 					const IIndex idxView = pointViews[i][j];
