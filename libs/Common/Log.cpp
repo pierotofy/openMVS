@@ -151,10 +151,12 @@ void Log::_Record(Idx lt, LPCTSTR szFormat, va_list args)
 	#endif
 	if ((size_t)_vsntprintf(szBuffer, 2048, szFormat, args) > 2048) {
 		// not enough space for the full string, reprint dynamically
-		m_message.FormatSafe("%s [%s] %s" LINE_SEPARATOR_STR, szTime, logType, String::FormatStringSafe(szFormat, args).c_str());
+		// m_message.FormatSafe("%s [%s] %s" LINE_SEPARATOR_STR, szTime, logType, String::FormatStringSafe(szFormat, args).c_str());
+		m_message.FormatSafe("[INFO] %s\n" LINE_SEPARATOR_STR, String::FormatStringSafe(szFormat, args).c_str());
 	} else {
 		// enough space for all the string, print directly
-		m_message.Format("%s [%s] %s" LINE_SEPARATOR_STR, szTime, logType, szBuffer);
+		// m_message.Format("%s [%s] %s" LINE_SEPARATOR_STR, szTime, logType, szBuffer);
+		m_message.FormatSafe("[INFO] %s\n" LINE_SEPARATOR_STR, szBuffer);
 	}
 	TRACE(m_message);
 

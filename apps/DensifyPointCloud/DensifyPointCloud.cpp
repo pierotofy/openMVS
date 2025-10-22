@@ -225,8 +225,8 @@ bool Application::Initialize(size_t argc, LPCTSTR* argv)
 	//OPEN_LOGFILE(MAKE_PATH(APPNAME _T("-")+Util::getUniqueName(0)+_T(".log")).c_str());
 
 	// print application details: version and command line
-	Util::LogBuild();
-	LOG(_T("Command line: ") APPNAME _T("%s"), Util::CommandLineToString(argc, argv).c_str());
+	// Util::LogBuild();
+	// LOG(_T("Command line: ") APPNAME _T("%s"), Util::CommandLineToString(argc, argv).c_str());
 
 	// validate input
 	Util::ensureValidPath(OPT::strInputFileName);
