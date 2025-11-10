@@ -1121,26 +1121,48 @@ bool MVS::ReadScaleDepthMapPriors(
 
 	if (depths.size() == 0) return false;
 
-	// Compute scaling factor using linear least squares
-	// to minimize error: min ||depths - scale * priorDepths||^2
-	double numerator = 0.0;
-	double denominator = 0.0;
-	
+	// Compute scaling + offset factor using linear least squares
+
 	// Uniformly sample 128 points
 	const size_t maxSamples = 128;
 	const size_t step = std::max<size_t>(1, depths.size() / maxSamples);
 	
+	double sumPriorDepths = 0.0;
+	double sumPriorDepthsSq = 0.0;
+	double sumDepths = 0.0;
+	double sumDepthsPriors = 0.0;
+	size_t sampleCount = 0;
+	
 	for (size_t i = 0; i < depths.size(); i += step) {
-		numerator += depths[i] * priorDepths[i];
-		denominator += priorDepths[i] * priorDepths[i];
+		const double prior = priorDepths[i];
+		const double depth = depths[i];
+		
+		sumPriorDepths += prior;
+		sumPriorDepthsSq += prior * prior;
+		sumDepths += depth;
+		sumDepthsPriors += depth * prior;
+		++sampleCount;
 	}
 		
-	if (denominator <= 1e-8f) {
+	if (sampleCount < 2 || sumPriorDepthsSq <= 1e-8) {
 		DEBUG_ULTIMATE("Warning: insufficient data for depth scaling computation");
 		return false;
 	}
 
-	const float scale = numerator / denominator;
+	// Solve linear system for optimal scale and offset:
+	// depths = scale * priorDepths + offset
+	// Using least squares: minimize ||depths - scale * priorDepths - offset||^2
+	const double n = static_cast<double>(sampleCount);
+	const double denominator = n * sumPriorDepthsSq - sumPriorDepths * sumPriorDepths;
+	
+	if (ABS(denominator) <= 1e-8) {
+		DEBUG_ULTIMATE("Warning: degenerate prior depths for scaling computation");
+		return false;
+	}
+	
+	const float scale = static_cast<float>((n * sumDepthsPriors - sumDepths * sumPriorDepths) / denominator);
+	const float offset = static_cast<float>((sumDepths - scale * sumPriorDepths) / n);
+	std::cerr << scale << " " << offset << std::endl;
 	normalMap.create(size);
 	normalMap.memset(0);
 
@@ -1149,78 +1171,13 @@ bool MVS::ReadScaleDepthMapPriors(
 		for (int c = 0; c < depthMap.cols; ++c) {
 			Depth& depth = depthMap(r, c);
 			if (depth > 0) {
-				depth *= scale;
+				depth = depth * scale + offset;
 			}
 		}
 	}
 	EstimateNormalMap(image.camera.K, depthMap, normalMap);
-
-	/*
-
-	// create rough depth-map by interpolating inside triangles
-	const Camera& camera = image.camera;
-	mesh.ComputeNormalVertices();
-	depthMap.create(image.image.size());
-	normalMap.create(image.image.size());
-	if (!bAddCorners || bSparseOnly) {
-		depthMap.memset(0);
-		normalMap.memset(0);
-	}
-	if (bSparseOnly) {
-		// just project sparse pointcloud onto depthmap
-		FOREACH(i, mesh.vertices) {
-			const Point2f& x(projs[i]);
-			const Point2i ix(FLOOR2INT(x));
-			const Depth z(mesh.vertices[i].z);
-			const Normal& normal(mesh.vertexNormals[i]);
-			for (const Point2i dx : {Point2i(0,0),Point2i(1,0),Point2i(0,1),Point2i(1,1)}) {
-				const Point2i ax(ix + dx);
-				if (!depthMap.isInside(ax))
-					continue;
-				depthMap(ax) = z;
-				normalMap(ax) = normal;
-			}
-		}
-	} else {
-		// rasterize triangles onto depthmap
-		struct RasterDepth : TRasterMeshBase<RasterDepth> {
-			typedef TRasterMeshBase<RasterDepth> Base;
-			using Base::Triangle;
-			using Base::camera;
-			using Base::depthMap;
-			const Mesh::NormalArr& vertexNormals;
-			NormalMap& normalMap;
-			Mesh::Face face;
-			RasterDepth(const Mesh::NormalArr& _vertexNormals, const Camera& _camera, DepthMap& _depthMap, NormalMap& _normalMap)
-				: Base(_camera, _depthMap), vertexNormals(_vertexNormals), normalMap(_normalMap) {}
-			inline void Raster(const ImageRef& pt, const Triangle& t, const Point3f& bary) {
-				const Point3f pbary(PerspectiveCorrectBarycentricCoordinates(t, bary));
-				const Depth z(ComputeDepth(t, pbary));
-				ASSERT(z > Depth(0));
-				depthMap(pt) = z;
-				normalMap(pt) = normalized(
-					vertexNormals[face[0]] * pbary[0]+
-					vertexNormals[face[1]] * pbary[1]+
-					vertexNormals[face[2]] * pbary[2]
-				);
-			}
-		};
-		RasterDepth rasterer {mesh.vertexNormals, camera, depthMap, normalMap};
-		RasterDepth::Triangle triangle;
-		RasterDepth::TriangleRasterizer triangleRasterizer(triangle, rasterer);
-		for (const Mesh::Face& face : mesh.faces) {
-			rasterer.face = face;
-			triangle.ptc[0].z = mesh.vertices[face[0]].z;
-			triangle.ptc[1].z = mesh.vertices[face[1]].z;
-			triangle.ptc[2].z = mesh.vertices[face[2]].z;
-			Image8U::RasterizeTriangleBary(
-				projs[face[0]],
-				projs[face[1]],
-				projs[face[2]], triangleRasterizer);
-		}
-	}*/
 	return true;
-} // TriangulatePoints2DepthMap
+} // ReadScaleDepthMapPriors
 
 // roughly estimate depth and normal maps by triangulating the sparse point-cloud
 // and interpolating normal and depth for all pixels
