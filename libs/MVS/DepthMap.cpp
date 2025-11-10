@@ -1146,6 +1146,21 @@ bool MVS::TriangulatePoints2DepthMap(
 				projs[face[1]],
 				projs[face[2]], triangleRasterizer);
 		}
+
+		// randomly subsample depth map
+		const float subsampleRate = 1.0f / 120.0f;
+		std::random_device rd;
+		std::mt19937 gen(rd());
+		std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+		
+		for (int r = 0; r < depthMap.rows; ++r) {
+			for (int c = 0; c < depthMap.cols; ++c) {
+				if (dis(gen) >= subsampleRate) {
+					depthMap(r, c) = 0;
+					normalMap(r, c) = Normal::ZERO;
+				}
+			}
+		}
 	}
 	return true;
 } // TriangulatePoints2DepthMap
