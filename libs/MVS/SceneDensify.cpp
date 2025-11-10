@@ -338,13 +338,25 @@ bool DepthMapsData::InitDepthMap(DepthData& depthData)
 
 	ASSERT(depthData.images.GetSize() > 1 && !depthData.points.IsEmpty());
 	const DepthData::ViewData& image(depthData.GetView());
-	TriangulatePoints2DepthMap(image, scene.pointcloud, depthData.points, depthData.depthMap, depthData.normalMap, depthData.dMin, depthData.dMax, OPTDENSE::bAddCorners, false);
-	depthData.dMin *= 0.9f;
-	depthData.dMax *= 1.1f;
+	
+	bool triangulate = false;
+	if (OPTDENSE::bUseDepthPriors){
+		if (!ReadScaleDepthMapPriors(image, scene.pointcloud, depthData.points, depthData.depthMap, depthData.normalMap, depthData.dMin, depthData.dMax)){
+			triangulate = true;
+			DEBUG_ULTIMATE("Cannot read depth priors for %3u", image.GetID())
+		}
+	}
+
+	if (triangulate){
+		TriangulatePoints2DepthMap(image, scene.pointcloud, depthData.points, depthData.depthMap, depthData.normalMap, depthData.dMin, depthData.dMax, OPTDENSE::bAddCorners, false);
+		depthData.dMin *= 0.9f;
+		depthData.dMax *= 1.1f;
+	}
 
 	#if TD_VERBOSE != TD_VERBOSE_OFF
 	// save rough depth map as image
 	if (g_nVerbosityLevel > 4) {
+		ExportRawDepthMap(ComposeDepthFilePath(image.GetID(), "init.tif"), depthData.depthMap);
 		ExportDepthMap(ComposeDepthFilePath(image.GetID(), "init.png"), depthData.depthMap);
 		ExportNormalMap(ComposeDepthFilePath(image.GetID(), "init.normal.png"), depthData.normalMap);
 		ExportPointCloud(ComposeDepthFilePath(image.GetID(), "init.ply"), *depthData.images.First().pImageData, depthData.depthMap, depthData.normalMap);

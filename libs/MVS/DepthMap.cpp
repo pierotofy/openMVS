@@ -86,6 +86,7 @@ MDEFVAR_OPTDENSE_uint32(nNumViews, "Num Views", "Number of views used for depth-
 MDEFVAR_OPTDENSE_uint32(nMinPixelsFuse, "Min Pixels Fuse", "minimum number of depth-estimates that agree during fusion in order to consider it (multiple pixels can be from the same depth-map)", "2")
 MDEFVAR_OPTDENSE_uint32(nMaxPointsFuse, "Max Points Fuse", "maximum number of pixels to fuse into a single point", "1000")
 MDEFVAR_OPTDENSE_uint32(nMaxFuseDepth, "Max Fuse Depth", "maximum depth in fusion graph traversal", "100")
+MDEFVAR_OPTDENSE_bool(bUseDepthPriors, "Use Depth Priors", "Use depthmap priors if available", "1")
 MDEFVAR_OPTDENSE_bool(bAddCorners, "Add Corners", "add support points at image corners with nearest neighbor disparities", "0")
 MDEFVAR_OPTDENSE_bool(bInitSparse, "Init Sparse", "init depth-map only with the sparse points (no interpolation)", "1")
 MDEFVAR_OPTDENSE_bool(bRemoveDmaps, "Remove Dmaps", "remove depth-maps after fusion", "0")
@@ -1070,6 +1071,157 @@ std::pair<float,float> TriangulatePointsDelaunay(const DepthData::ViewData& imag
 	return depthBounds;
 }
 
+bool MVS::ReadScaleDepthMapPriors(
+	const DepthData::ViewData& image, const PointCloud& pointcloud, const IndexArr& points,
+	DepthMap& depthMap, NormalMap& normalMap, Depth& dMin, Depth& dMax)
+{
+	ASSERT(image.pImageData != NULL);
+
+	String imagePath = image.pImageData->name;
+	String imageBasename = Util::getFileName(imagePath);
+	String depthPriorFile = MAKE_PATH_SAFE("priors/" + imageBasename + ".tif");
+
+	if (!File::isFile(depthPriorFile)) {
+		DEBUG_ULTIMATE("Cannot find %s", depthPriorFile);
+		return false;
+	}
+
+	if (!depthMap.Load(depthPriorFile)) {
+		DEBUG_ULTIMATE("Cannot load %s", depthPriorFile);
+		return false;
+	}
+
+	auto size = image.image.size();
+	if (depthMap.size() != size) {
+		cv::resize(depthMap, depthMap, size, 0, 0, cv::INTER_LINEAR);
+	}
+
+	dMin = FLT_MAX;
+	dMax = 0.f;
+
+	FloatArr depths;
+	FloatArr priorDepths;
+
+	for (uint32_t idx: points) {
+		const Point3f pt(image.camera.ProjectPointP3(pointcloud.points[idx]));
+		if (pt.z <= 0) continue;
+
+		const Point2f x(pt.x/pt.z, pt.y/pt.z);
+		const Point2i ix(FLOOR2INT(x));
+
+		if (ix.x >= 0 && ix.x < depthMap.cols && ix.y >= 0 && ix.y < depthMap.rows) {
+			priorDepths.emplace_back(depthMap(ix));
+			depths.emplace_back(pt.z);
+			if (dMin > pt.z)
+				dMin = pt.z;
+			if (dMax < pt.z)
+				dMax = pt.z;
+		}
+	}
+
+	if (depths.size() == 0) return false;
+
+	// Compute scaling factor using linear least squares
+	// to minimize error: min ||depths - scale * priorDepths||^2
+	double numerator = 0.0;
+	double denominator = 0.0;
+	
+	// Uniformly sample 128 points
+	const size_t maxSamples = 128;
+	const size_t step = std::max<size_t>(1, depths.size() / maxSamples);
+	
+	for (size_t i = 0; i < depths.size(); i += step) {
+		numerator += depths[i] * priorDepths[i];
+		denominator += priorDepths[i] * priorDepths[i];
+	}
+		
+	if (denominator <= 1e-8f) {
+		DEBUG_ULTIMATE("Warning: insufficient data for depth scaling computation");
+		return false;
+	}
+
+	const float scale = numerator / denominator;
+	normalMap.create(size);
+	normalMap.memset(0);
+
+	// Apply scaling to the entire depth map and compute normals
+	for (int r = 0; r < depthMap.rows; ++r) {
+		for (int c = 0; c < depthMap.cols; ++c) {
+			Depth& depth = depthMap(r, c);
+			if (depth > 0) {
+				depth *= scale;
+			}
+		}
+	}
+	EstimateNormalMap(image.camera.K, depthMap, normalMap);
+
+	/*
+
+	// create rough depth-map by interpolating inside triangles
+	const Camera& camera = image.camera;
+	mesh.ComputeNormalVertices();
+	depthMap.create(image.image.size());
+	normalMap.create(image.image.size());
+	if (!bAddCorners || bSparseOnly) {
+		depthMap.memset(0);
+		normalMap.memset(0);
+	}
+	if (bSparseOnly) {
+		// just project sparse pointcloud onto depthmap
+		FOREACH(i, mesh.vertices) {
+			const Point2f& x(projs[i]);
+			const Point2i ix(FLOOR2INT(x));
+			const Depth z(mesh.vertices[i].z);
+			const Normal& normal(mesh.vertexNormals[i]);
+			for (const Point2i dx : {Point2i(0,0),Point2i(1,0),Point2i(0,1),Point2i(1,1)}) {
+				const Point2i ax(ix + dx);
+				if (!depthMap.isInside(ax))
+					continue;
+				depthMap(ax) = z;
+				normalMap(ax) = normal;
+			}
+		}
+	} else {
+		// rasterize triangles onto depthmap
+		struct RasterDepth : TRasterMeshBase<RasterDepth> {
+			typedef TRasterMeshBase<RasterDepth> Base;
+			using Base::Triangle;
+			using Base::camera;
+			using Base::depthMap;
+			const Mesh::NormalArr& vertexNormals;
+			NormalMap& normalMap;
+			Mesh::Face face;
+			RasterDepth(const Mesh::NormalArr& _vertexNormals, const Camera& _camera, DepthMap& _depthMap, NormalMap& _normalMap)
+				: Base(_camera, _depthMap), vertexNormals(_vertexNormals), normalMap(_normalMap) {}
+			inline void Raster(const ImageRef& pt, const Triangle& t, const Point3f& bary) {
+				const Point3f pbary(PerspectiveCorrectBarycentricCoordinates(t, bary));
+				const Depth z(ComputeDepth(t, pbary));
+				ASSERT(z > Depth(0));
+				depthMap(pt) = z;
+				normalMap(pt) = normalized(
+					vertexNormals[face[0]] * pbary[0]+
+					vertexNormals[face[1]] * pbary[1]+
+					vertexNormals[face[2]] * pbary[2]
+				);
+			}
+		};
+		RasterDepth rasterer {mesh.vertexNormals, camera, depthMap, normalMap};
+		RasterDepth::Triangle triangle;
+		RasterDepth::TriangleRasterizer triangleRasterizer(triangle, rasterer);
+		for (const Mesh::Face& face : mesh.faces) {
+			rasterer.face = face;
+			triangle.ptc[0].z = mesh.vertices[face[0]].z;
+			triangle.ptc[1].z = mesh.vertices[face[1]].z;
+			triangle.ptc[2].z = mesh.vertices[face[2]].z;
+			Image8U::RasterizeTriangleBary(
+				projs[face[0]],
+				projs[face[1]],
+				projs[face[2]], triangleRasterizer);
+		}
+	}*/
+	return true;
+} // TriangulatePoints2DepthMap
+
 // roughly estimate depth and normal maps by triangulating the sparse point-cloud
 // and interpolating normal and depth for all pixels
 bool MVS::TriangulatePoints2DepthMap(
@@ -1844,6 +1996,20 @@ bool MVS::ExportDepthMap(const String& fileName, const DepthMap& depthMap, Depth
 	return DepthMap2Image(depthMap, minDepth, maxDepth).Save(fileName);
 } // ExportDepthMap
 /*----------------------------------------------------------------*/
+
+bool MVS::ExportRawDepthMap(const String& fileName, const DepthMap& depthMap)
+{
+	if (depthMap.empty())
+		return false;
+	
+	Image32F img(depthMap.size());
+	for (int i=depthMap.area(); --i >= 0; ) {
+		img[i] = depthMap[i];
+	}
+	return img.Save(fileName);
+} // ExportRawDepthMap
+
+
 
 // export normal map as an image
 bool MVS::ExportNormalMap(const String& fileName, const NormalMap& normalMap)
