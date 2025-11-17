@@ -1311,12 +1311,15 @@ bool Scene::SelectNeighborViews(uint32_t ID, IndexArr& points, unsigned nMinView
 			const float footprint2(imageData2.camera.GetFootprintImage(depth2));
 			const float fScaleRatio(footprint1/footprint2);
 			float wScale;
-			if (fScaleRatio > 1.6f)
-				wScale = SQUARE(1.6f/fScaleRatio);
+
+			if (fScaleRatio > 1.3f)
+				// wScale = SQUARE(1.6f/fScaleRatio);
+				wScale = 1.f / (1.f + SQUARE(fScaleRatio - 1.3f));
 			else if (fScaleRatio >= 1.f)
 				wScale = 1.f;
 			else
-				wScale = SQUARE(fScaleRatio);
+				// wScale = SQUARE(fScaleRatio);
+				wScale = (3.f * SQUARE(fScaleRatio)) - (2.f * CUBE(fScaleRatio));
 			Score& score = scores[view];
 			score.score += MAXF(wAngle,0.1f) * wScale * wROI;
 			score.avgScale += fScaleRatio;
