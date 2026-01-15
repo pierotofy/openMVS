@@ -21,8 +21,15 @@ IF(CMAKE_VERSION VERSION_GREATER_EQUAL 3.16.0)
 	endif()
 endif()
 
+find_library(TCMALLOC_LIB NAMES tcmalloc)
+if(TCMALLOC_LIB)
+    message(STATUS "Found TCMalloc: ${TCMALLOC_LIB}")
+else()
+    message(WARNING "TCMalloc not found, using default glibc malloc")
+endif()
+
 # Link its dependencies
-TARGET_LINK_LIBRARIES(Common ${Boost_LIBRARIES} ${OpenCV_LIBS})
+TARGET_LINK_LIBRARIES(Common ${Boost_LIBRARIES} ${OpenCV_LIBS} ${TCMALLOC_LIB})
 
 # Install
 SET_TARGET_PROPERTIES(Common PROPERTIES
