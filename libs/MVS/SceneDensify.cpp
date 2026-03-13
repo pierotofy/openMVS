@@ -1370,7 +1370,6 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 	constexpr unsigned kMaxRelaxIdx = 5;
 	float adaptiveDepthDiffThresholdLUT[kMaxRelaxIdx + 1];
 	float adaptiveNormalErrorLUT[kMaxRelaxIdx + 1];
-	int adaptiveCount[kMaxRelaxIdx + 1];
 	for (unsigned n = 0; n <= kMaxRelaxIdx; ++n) {
 		const float relaxFactor = 1.f + (n >= kMaxRelaxIdx ?
 			-0.333f
@@ -1378,7 +1377,6 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 		);
 		adaptiveDepthDiffThresholdLUT[n] = OPTDENSE::fDepthDiffThreshold * relaxFactor;
 		adaptiveNormalErrorLUT[n] = COS(FD2R(OPTDENSE::fNormalDiffThreshold * relaxFactor));
-		adaptiveCount[n] = 0;
 	}
 	const IIndex numDMapsReserveFusion(10);
 	CLISTDEF0(Depth*) invalidDepths(0, 32);
@@ -1509,7 +1507,6 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 
 					const float fAdaptiveDepthDiffThreshold(adaptiveDepthDiffThresholdLUT[MINF(views.size(), kMaxRelaxIdx)]);
 					const float fAdaptiveNormalError(adaptiveNormalErrorLUT[MINF(views.size(), kMaxRelaxIdx)]);
-					adaptiveCount[MINF(views.size(), kMaxRelaxIdx)]++;
 
 					if (IsDepthSimilar(pt.z, depthB, fAdaptiveDepthDiffThreshold)) {
 						// check if normals agree
