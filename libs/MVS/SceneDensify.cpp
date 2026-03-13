@@ -1366,7 +1366,20 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 
 	// fuse all depth-maps, processing the best connected images first
 	const unsigned nMinViewsFuse(MINF(OPTDENSE::nMinViewsFuse, arrDepthData.size()));
-	const float normalError(COS(FD2R(OPTDENSE::fNormalDiffThreshold)));
+	// const float normalError(COS(FD2R(OPTDENSE::fNormalDiffThreshold)));
+	constexpr unsigned kMaxRelaxIdx = 5;
+	float adaptiveDepthDiffThresholdLUT[kMaxRelaxIdx + 1];
+	float adaptiveNormalErrorLUT[kMaxRelaxIdx + 1];
+	int adaptiveCount[kMaxRelaxIdx + 1];
+	for (unsigned n = 0; n <= kMaxRelaxIdx; ++n) {
+		const float relaxFactor = 1.f + (n >= kMaxRelaxIdx ?
+			-0.333f
+			: MAXF(0.f, 1.f - (0.333f * (static_cast<float>(n) - 1.f)))
+		);
+		adaptiveDepthDiffThresholdLUT[n] = OPTDENSE::fDepthDiffThreshold * relaxFactor;
+		adaptiveNormalErrorLUT[n] = COS(FD2R(OPTDENSE::fNormalDiffThreshold * relaxFactor));
+		adaptiveCount[n] = 0;
+	}
 	const IIndex numDMapsReserveFusion(10);
 	CLISTDEF0(Depth*) invalidDepths(0, 32);
 	size_t nDepths(0);
@@ -1444,6 +1457,7 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 			depthIdxs.create(depthData.size);
 			depthIdxs.memset((uint8_t)NO_ID);
 		}
+
 		const size_t nNumPointsPrev(pointcloud.points.size());
 		for (int i=0; i<depthData.size.height; ++i) {
 			for (int j=0; j<depthData.size.width; ++j) {
@@ -1492,11 +1506,16 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 					uint32_t& idxPointB = arrDepthIdx[idxImageB](xB);
 					if (idxPointB != NO_ID)
 						continue;
-					if (IsDepthSimilar(pt.z, depthB, OPTDENSE::fDepthDiffThreshold)) {
+
+					const float fAdaptiveDepthDiffThreshold(adaptiveDepthDiffThresholdLUT[MINF(views.size(), kMaxRelaxIdx)]);
+					const float fAdaptiveNormalError(adaptiveNormalErrorLUT[MINF(views.size(), kMaxRelaxIdx)]);
+					adaptiveCount[MINF(views.size(), kMaxRelaxIdx)]++;
+
+					if (IsDepthSimilar(pt.z, depthB, fAdaptiveDepthDiffThreshold)) {
 						// check if normals agree
 						const PointCloud::Normal normalB(!depthData.normalMap.empty() ? Cast<Normal::Type>(imageDataB.camera.R.t() * Cast<REAL>(depthDataB.normalMap(xB))) : Normal(0, 0, -1));
 						ASSERT(ISEQUAL(norm(normalB), 1.f), "Norm = ", norm(normalB));
-						if (normal.dot(normalB) > normalError) {
+						if (normal.dot(normalB) > fAdaptiveNormalError) {
 							// add view to the 3D point
 							ASSERT(views.FindFirst(idxImageB) == PointCloud::ViewArr::NO_INDEX);
 							const float confidenceB(Conf2Weight(depthDataB.confMap.empty() ? 1.f : depthDataB.confMap(xB),depthB));
