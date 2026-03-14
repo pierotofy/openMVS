@@ -1367,12 +1367,12 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 	// fuse all depth-maps, processing the best connected images first
 	const unsigned nMinViewsFuse(MINF(OPTDENSE::nMinViewsFuse, arrDepthData.size()));
 	// const float normalError(COS(FD2R(OPTDENSE::fNormalDiffThreshold)));
-	constexpr unsigned kMaxRelaxIdx = 5;
+	constexpr unsigned kMaxRelaxIdx = 4;
 	float adaptiveDepthDiffThresholdLUT[kMaxRelaxIdx + 1];
 	float adaptiveNormalErrorLUT[kMaxRelaxIdx + 1];
 	for (unsigned n = 0; n <= kMaxRelaxIdx; ++n) {
 		const float relaxFactor = 1.f + (n >= kMaxRelaxIdx ?
-			-0.333f
+			0.0f
 			: MAXF(0.f, 1.f - (0.333f * (static_cast<float>(n) - 1.f)))
 		);
 		adaptiveDepthDiffThresholdLUT[n] = OPTDENSE::fDepthDiffThreshold * relaxFactor;
