@@ -1410,16 +1410,36 @@ void Scene::SelectNeighborViews(unsigned nMinViews, unsigned nMinPointViews, flo
 // keep only the best neighbors for the reference image
 bool Scene::FilterNeighborViews(ViewScoreArr& neighbors, float fMinArea, float fMinScale, float fMaxScale, float fMinAngle, float fMaxAngle, unsigned nMaxViews)
 {
-	// remove invalid neighbor views
+	// remove invalid neighbor views:
+	// partition neighbors into valid (satisfy all constraints) and invalid,
+	// keeping invalid ones only if needed to maintain the minimum view count
 	const unsigned nMinViews(MAXF(4u, nMaxViews*3/4));
-	RFOREACH(n, neighbors) {
+	// move all valid neighbors to the front, invalid to the back
+	size_t nValid = 0;
+	for (size_t n = 0; n < neighbors.size(); ++n) {
 		const ViewScore& neighbor = neighbors[n];
-		if (neighbors.size() > nMinViews &&
-			(neighbor.area < fMinArea ||
-			 !ISINSIDE(neighbor.scale, fMinScale, fMaxScale) ||
-			 !ISINSIDE(neighbor.angle, fMinAngle, fMaxAngle)))
-			neighbors.RemoveAtMove(n);
+		if (neighbor.area >= fMinArea &&
+			ISINSIDE(neighbor.scale, fMinScale, fMaxScale) &&
+			ISINSIDE(neighbor.angle, fMinAngle, fMaxAngle)) {
+			if (n != nValid)
+				std::swap(neighbors[n], neighbors[nValid]);
+			++nValid;
+		}
 	}
+	// keep at least nMinViews: use valid neighbors first, then invalid ones sorted by score
+	if (nValid < nMinViews && neighbors.size() > nValid) {
+		// sort invalid neighbors (those after nValid) by score descending,
+		// so the best invalid ones are kept when we need to fill up to nMinViews
+		std::sort(neighbors.begin() + nValid, neighbors.end(),
+			[](const ViewScore& a, const ViewScore& b) { return a.score > b.score; });
+		// keep enough invalid neighbors to reach nMinViews
+		const size_t nKeep = MINF(static_cast<size_t>(nMinViews), static_cast<size_t>(neighbors.size()));
+		neighbors.resize(nKeep);
+	} else {
+		// enough valid neighbors; remove all invalid ones
+		neighbors.resize(nValid);
+	}
+	// enforce the maximum view count
 	if (neighbors.size() > nMaxViews)
 		neighbors.resize(nMaxViews);
 	return !neighbors.empty();

@@ -1372,7 +1372,7 @@ void DepthMapsData::FuseDepthMaps(PointCloud& pointcloud, bool bEstimateColor, b
 	float adaptiveNormalErrorLUT[kMaxRelaxIdx + 1];
 	for (unsigned n = 0; n <= kMaxRelaxIdx; ++n) {
 		const float relaxFactor = 1.f + (n >= kMaxRelaxIdx ?
-			0.0f
+			0.f
 			: MAXF(0.f, 1.f - (0.333f * (static_cast<float>(n) - 1.f)))
 		);
 		adaptiveDepthDiffThresholdLUT[n] = OPTDENSE::fDepthDiffThreshold * relaxFactor;
