@@ -60,6 +60,7 @@ String strDenseConfigFileName;
 String strExportDepthMapsName;
 String strMaskPath;
 float fMaxSubsceneArea;
+unsigned nMaxSubsceneCameras;
 float fSampleMesh;
 float fSampleMeshNeighbors;
 float fBorderROI;
@@ -166,6 +167,7 @@ bool Application::Initialize(size_t argc, LPCTSTR* argv)
 		("estimate-scale", boost::program_options::value(&OPT::fEstimateScale)->default_value(0.f), "estimate the point-scale for the dense point-cloud (scale multiplier, 0 - disabled)")
 		("estimate-segmentation", boost::program_options::value(&OPT::nEstimateSegmentation)->default_value(0), "estimate segmentation of the dense point-cloud based on the image segmentation masks; num views to agree (0 - disabled, <0 - only segmentation)")
 		("sub-scene-area", boost::program_options::value(&OPT::fMaxSubsceneArea)->default_value(0.f), "split the scene in sub-scenes such that each sub-scene surface does not exceed the given maximum sampling area (0 - disabled)")
+		("sub-scene-cameras", boost::program_options::value(&OPT::nMaxSubsceneCameras)->default_value(0), "split the scene in sub-scenes such that each sub-scene contains at most the given number of cameras, where some cameras can be present in multiple sub-scenes (0 - disabled)")
 		("sample-mesh", boost::program_options::value(&OPT::fSampleMesh)->default_value(0.f), "uniformly samples points on a mesh (0 - disabled, <0 - number of points, >0 - sample density per square unit)")
 		("fusion-mode", boost::program_options::value(&OPT::nFusionMode)->default_value(0), "depth-maps fusion mode (-2 - fuse disparity-maps, -1 - export disparity-maps only, 0 - depth-maps & fusion, 1 - export depth-maps only)")
 		("fusion-filter", boost::program_options::value(&nFuseFilter)->default_value(2), "filter used to fuse the depth-maps (0 - merge, 1 - fuse, 2 - dense-fuse)")
@@ -237,6 +239,10 @@ bool Application::Initialize(size_t argc, LPCTSTR* argv)
 	}
 	if (OPT::strInputFileName.empty())
 		return false;
+	if (OPT::fMaxSubsceneArea > 0 && OPT::nMaxSubsceneCameras > 0) {
+		LOG("error: only one of sub-scene-area and sub-scene-cameras can be specified");
+		return false;
+	}
 
 	// initialize optional options
 	Util::ensureValidPath(OPT::strPointCloudFileName);
@@ -422,10 +428,10 @@ int main(int argc, LPCTSTR* argv)
 		VERBOSE("Mesh projection completed: %u depth-maps (%s)", scene.images.size(), TD_TIMER_GET_FMT().c_str());
 		return EXIT_SUCCESS;
 	}
-	if (OPT::fMaxSubsceneArea > 0) {
-		// split the scene in sub-scenes by maximum sampling area
+	if (OPT::fMaxSubsceneArea > 0 || OPT::nMaxSubsceneCameras > 0) {
+		// split the scene in sub-scenes by maximum sampling area or maximum number of cameras
 		Scene::ImagesChunkArr chunks;
-		scene.Split(chunks, OPT::fMaxSubsceneArea);
+		scene.Split(chunks, OPT::fMaxSubsceneArea, 8, OPT::nMaxSubsceneCameras);
 		scene.ExportChunks(chunks, GET_PATH_FULL(OPT::strOutputFileName), (ARCHIVE_TYPE)OPT::nArchiveType);
 		return EXIT_SUCCESS;
 	}

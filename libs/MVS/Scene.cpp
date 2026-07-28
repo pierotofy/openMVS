@@ -1596,7 +1596,10 @@ bool Scene::ExportLinesPLY(const String& fileName, const CLISTDEF0IDX(Line3f,uin
 //    can load all sub-scene's depth-maps into memory at once
 //  - limit in the same time maximum accumulated images resolution (total number of pixels)
 //    per sub-scene in order to allow all images to be loaded and processed during mesh refinement
-unsigned Scene::Split(ImagesChunkArr& chunks, float maxArea, int depthMapStep) const
+// if maxNumCameras > 0, maxArea is ignored and the scene is split such that each sub-scene
+// contains at most the given number of cameras (a camera can be part of multiple sub-scenes),
+// by searching the largest sampling area budget that satisfies the camera limit
+unsigned Scene::Split(ImagesChunkArr& chunks, float maxArea, int depthMapStep, unsigned maxNumCameras) const
 {
 	TD_TIMER_STARTD();
 	// gather samples from all depth-maps
@@ -1606,6 +1609,7 @@ unsigned Scene::Split(ImagesChunkArr& chunks, float maxArea, int depthMapStep) c
 	Octree octree;
 	FloatArr areas(0, images.size()*4192);
 	IIndexArr visibility(0, (IIndex)areas.capacity());
+	IIndex numValidImages(0);
 	Unsigned32Arr imageAreas(images.size()); {
 		Samples samples(0, (uint32_t)areas.capacity());
 		FOREACH(idxImage, images) {
@@ -1632,6 +1636,8 @@ unsigned Scene::Split(ImagesChunkArr& chunks, float maxArea, int depthMapStep) c
 				}
 			}
 			imageAreas[idxImage] = visibility.size()-numPointsBegin;
+			if (imageAreas[idxImage] > 0)
+				++numValidImages;
 		}
 		const AABB3f aabb(IsBounded() ? obb.GetAABB() : [&samples]() {
 			#if 0
@@ -1662,146 +1668,197 @@ unsigned Scene::Split(ImagesChunkArr& chunks, float maxArea, int depthMapStep) c
 		#endif
 		octree.ResetItems();
 	}
-	struct AreaInserter {
-		const FloatArr& areas;
-		float area;
-		inline void operator() (const Octree::IDX_TYPE* indices, Octree::SIZE_TYPE size) {
-			FOREACHRAWPTR(pIdx, indices, size)
-				area += areas[*pIdx];
-		}
-		inline float PopArea() {
-			const float a(area);
-			area = 0;
-			return a;
-		}
-	} areaEstimator{areas, 0.f};
-	struct ChunkInserter {
-		const IIndex numImages;
-		const Octree& octree;
-		const IIndexArr& visibility;
-		ImagesChunkArr& chunks;
-		CLISTDEF2(Unsigned32Arr) imagesAreas;
-		void operator() (const Octree::CELL_TYPE& parentCell, Octree::Type parentRadius, const UnsignedArr& children) {
-			ASSERT(!children.empty());
-			ImagesChunk& chunk = chunks.AddEmpty();
-			Unsigned32Arr& imageAreas = imagesAreas.AddEmpty();
-			imageAreas.resize(numImages);
-			imageAreas.Memset(0);
-			struct Inserter {
-				const IIndexArr& visibility;
-				std::unordered_set<IIndex>& images;
-				Unsigned32Arr& imageAreas;
-				inline void operator() (const Octree::IDX_TYPE* indices, Octree::SIZE_TYPE size) {
-					FOREACHRAWPTR(pIdx, indices, size) {
-						const IIndex idxImage(visibility[*pIdx]);
-						images.emplace(idxImage);
-						++imageAreas[idxImage];
+	// partition the samples into chunks, each chunk not exceeding the given sampling area,
+	// and apply the image pruning and small chunk merging heuristics
+	const auto Partition = [&](float maxChunkArea, ImagesChunkArr& chunks) -> unsigned {
+		chunks.Empty();
+		struct AreaInserter {
+			const FloatArr& areas;
+			float area;
+			inline void operator() (const Octree::IDX_TYPE* indices, Octree::SIZE_TYPE size) {
+				FOREACHRAWPTR(pIdx, indices, size)
+					area += areas[*pIdx];
+			}
+			inline float PopArea() {
+				const float a(area);
+				area = 0;
+				return a;
+			}
+		} areaEstimator{areas, 0.f};
+		struct ChunkInserter {
+			const IIndex numImages;
+			const Octree& octree;
+			const IIndexArr& visibility;
+			ImagesChunkArr& chunks;
+			CLISTDEF2(Unsigned32Arr) imagesAreas;
+			void operator() (const Octree::CELL_TYPE& parentCell, Octree::Type parentRadius, const UnsignedArr& children) {
+				ASSERT(!children.empty());
+				ImagesChunk& chunk = chunks.AddEmpty();
+				Unsigned32Arr& imageAreas = imagesAreas.AddEmpty();
+				imageAreas.resize(numImages);
+				imageAreas.Memset(0);
+				struct Inserter {
+					const IIndexArr& visibility;
+					std::unordered_set<IIndex>& images;
+					Unsigned32Arr& imageAreas;
+					inline void operator() (const Octree::IDX_TYPE* indices, Octree::SIZE_TYPE size) {
+						FOREACHRAWPTR(pIdx, indices, size) {
+							const IIndex idxImage(visibility[*pIdx]);
+							images.emplace(idxImage);
+							++imageAreas[idxImage];
+						}
+					}
+				} inserter{visibility, chunk.images, imageAreas};
+				if (children.size() == 1) {
+					octree.CollectCells(parentCell.GetChild(children.front()), inserter);
+					chunk.aabb = parentCell.GetChildAabb(children.front(), parentRadius);
+				} else {
+					chunk.aabb.Reset();
+					for (unsigned c: children) {
+						octree.CollectCells(parentCell.GetChild(c), inserter);
+						chunk.aabb.Insert(parentCell.GetChildAabb(c, parentRadius));
 					}
 				}
-			} inserter{visibility, chunk.images, imageAreas};
-			if (children.size() == 1) {
-				octree.CollectCells(parentCell.GetChild(children.front()), inserter);
-				chunk.aabb = parentCell.GetChildAabb(children.front(), parentRadius);
-			} else {
-				chunk.aabb.Reset();
-				for (unsigned c: children) {
-					octree.CollectCells(parentCell.GetChild(c), inserter);
-					chunk.aabb.Insert(parentCell.GetChildAabb(c, parentRadius));
+				if (chunk.images.empty()) {
+					chunks.RemoveLast();
+					imagesAreas.RemoveLast();
 				}
 			}
-			if (chunk.images.empty()) {
-				chunks.RemoveLast();
-				imagesAreas.RemoveLast();
+		} chunkInserter{images.size(), octree, visibility, chunks};
+		octree.SplitVolume(maxChunkArea, areaEstimator, chunkInserter);
+		if (chunks.size() < 2)
+			return 0;
+		// remove images with very little contribution
+		const float minImageContributionRatio(0.3f);
+		FOREACH(c, chunks) {
+			ImagesChunk& chunk = chunks[c];
+			const Unsigned32Arr& chunkImageAreas = chunkInserter.imagesAreas[c];
+			float maxAreaRatio = 0;
+			for (const IIndex idxImage : chunk.images) {
+				const float areaRatio(static_cast<float>(chunkImageAreas[idxImage])/static_cast<float>(imageAreas[idxImage]));
+				if (maxAreaRatio < areaRatio)
+					maxAreaRatio = areaRatio;
 			}
-		}
-	} chunkInserter{images.size(), octree, visibility, chunks};
-	octree.SplitVolume(maxArea, areaEstimator, chunkInserter);
-	if (chunks.size() < 2)
-		return 0;
-	// remove images with very little contribution
-	const float minImageContributionRatio(0.3f);
-	FOREACH(c, chunks) {
-		ImagesChunk& chunk = chunks[c];
-		const Unsigned32Arr& chunkImageAreas = chunkInserter.imagesAreas[c];
-		float maxAreaRatio = 0;
-		for (const IIndex idxImage : chunk.images) {
-			const float areaRatio(static_cast<float>(chunkImageAreas[idxImage])/static_cast<float>(imageAreas[idxImage]));
-			if (maxAreaRatio < areaRatio)
-				maxAreaRatio = areaRatio;
-		}
-		const float minImageContributionRatioChunk(maxAreaRatio * minImageContributionRatio);
-		for (auto it = chunk.images.begin(); it != chunk.images.end(); ) {
-			const IIndex idxImage(*it);
-			if (static_cast<float>(chunkImageAreas[idxImage])/static_cast<float>(imageAreas[idxImage]) < minImageContributionRatioChunk)
-				it = chunk.images.erase(it);
-			else
-				++it;
-		}
-	}
-	#if 1
-	// remove images already completely contained by a larger chunk
-	const float minImageContributionRatioLargerChunk(0.9f);
-	FOREACH(cSmall, chunks) {
-		ImagesChunk& chunkSmall = chunks[cSmall];
-		const Unsigned32Arr& chunkSmallImageAreas = chunkInserter.imagesAreas[cSmall];
-		FOREACH(cLarge, chunks) {
-			const ImagesChunk& chunkLarge = chunks[cLarge];
-			if (chunkLarge.images.size() <= chunkSmall.images.size())
-				continue;
-			const Unsigned32Arr& chunkLargeImageAreas = chunkInserter.imagesAreas[cLarge];
-			for (auto it = chunkSmall.images.begin(); it != chunkSmall.images.end(); ) {
+			const float minImageContributionRatioChunk(maxAreaRatio * minImageContributionRatio);
+			for (auto it = chunk.images.begin(); it != chunk.images.end(); ) {
 				const IIndex idxImage(*it);
-				if (chunkSmallImageAreas[idxImage] < chunkLargeImageAreas[idxImage] &&
-					static_cast<float>(chunkLargeImageAreas[idxImage])/static_cast<float>(imageAreas[idxImage]) > minImageContributionRatioLargerChunk)
-					it = chunkSmall.images.erase(it);
+				if (static_cast<float>(chunkImageAreas[idxImage])/static_cast<float>(imageAreas[idxImage]) < minImageContributionRatioChunk)
+					it = chunk.images.erase(it);
 				else
 					++it;
 			}
 		}
-	}
-	#endif
-	#if 1
-	// merge small chunks into larger chunk neighbors
-	// TODO: better manage the bounding-box merge
-	const unsigned minNumImagesPerChunk(4);
-	RFOREACH(cSmall, chunks) {
-		ImagesChunk& chunkSmall = chunks[cSmall];
-		if (chunkSmall.images.size() > minNumImagesPerChunk)
-			continue;
-		// find the chunk having the most images in common
-		IIndex idxBestChunk;
-		unsigned numLargestCommonImages(0);
-		FOREACH(cLarge, chunks) {
-			if (cSmall == cLarge)
-				continue;
-			const ImagesChunk& chunkLarge = chunks[cLarge];
-			unsigned numCommonImages(0);
-			for (const IIndex idxImage: chunkSmall.images)
-				if (chunkLarge.images.find(idxImage) != chunkLarge.images.end())
-					++numCommonImages;
-			if (numCommonImages == 0)
-				continue;
-			if (numLargestCommonImages < numCommonImages ||
-				(numLargestCommonImages == numCommonImages && chunks[idxBestChunk].images.size() < chunkLarge.images.size()))
-			{
-				numLargestCommonImages = numCommonImages;
-				idxBestChunk = cLarge;
+		#if 1
+		// remove images already completely contained by a larger chunk
+		const float minImageContributionRatioLargerChunk(0.9f);
+		FOREACH(cSmall, chunks) {
+			ImagesChunk& chunkSmall = chunks[cSmall];
+			const Unsigned32Arr& chunkSmallImageAreas = chunkInserter.imagesAreas[cSmall];
+			FOREACH(cLarge, chunks) {
+				const ImagesChunk& chunkLarge = chunks[cLarge];
+				if (chunkLarge.images.size() <= chunkSmall.images.size())
+					continue;
+				const Unsigned32Arr& chunkLargeImageAreas = chunkInserter.imagesAreas[cLarge];
+				for (auto it = chunkSmall.images.begin(); it != chunkSmall.images.end(); ) {
+					const IIndex idxImage(*it);
+					if (chunkSmallImageAreas[idxImage] < chunkLargeImageAreas[idxImage] &&
+						static_cast<float>(chunkLargeImageAreas[idxImage])/static_cast<float>(imageAreas[idxImage]) > minImageContributionRatioLargerChunk)
+						it = chunkSmall.images.erase(it);
+					else
+						++it;
+				}
 			}
 		}
-		if (numLargestCommonImages == 0) {
-			DEBUG_ULTIMATE("warning: small chunk can not be merged (%u chunk, %u images)",
-				cSmall, chunkSmall.images.size());
-			continue;
+		#endif
+		#if 1
+		// merge small chunks into larger chunk neighbors
+		// TODO: better manage the bounding-box merge
+		const unsigned minNumImagesPerChunk(4);
+		RFOREACH(cSmall, chunks) {
+			ImagesChunk& chunkSmall = chunks[cSmall];
+			if (chunkSmall.images.size() > minNumImagesPerChunk)
+				continue;
+			// find the chunk having the most images in common
+			IIndex idxBestChunk;
+			unsigned numLargestCommonImages(0);
+			FOREACH(cLarge, chunks) {
+				if (cSmall == cLarge)
+					continue;
+				const ImagesChunk& chunkLarge = chunks[cLarge];
+				unsigned numCommonImages(0);
+				for (const IIndex idxImage: chunkSmall.images)
+					if (chunkLarge.images.find(idxImage) != chunkLarge.images.end())
+						++numCommonImages;
+				if (numCommonImages == 0)
+					continue;
+				if (numLargestCommonImages < numCommonImages ||
+					(numLargestCommonImages == numCommonImages && chunks[idxBestChunk].images.size() < chunkLarge.images.size()))
+				{
+					numLargestCommonImages = numCommonImages;
+					idxBestChunk = cLarge;
+				}
+			}
+			if (numLargestCommonImages == 0) {
+				DEBUG_ULTIMATE("warning: small chunk can not be merged (%u chunk, %u images)",
+					cSmall, chunkSmall.images.size());
+				continue;
+			}
+			// merge the small chunk and remove it
+			ImagesChunk& chunkLarge = chunks[idxBestChunk];
+			DEBUG_ULTIMATE("Small chunk merged: %u chunk (%u images) -> %u chunk (%u images)",
+				cSmall, chunkSmall.images.size(), idxBestChunk, chunkLarge.images.size());
+			chunkLarge.aabb.Insert(chunkSmall.aabb);
+			chunkLarge.images.insert(chunkSmall.images.begin(), chunkSmall.images.end());
+			chunks.RemoveAt(cSmall);
 		}
-		// merge the small chunk and remove it
-		ImagesChunk& chunkLarge = chunks[idxBestChunk];
-		DEBUG_ULTIMATE("Small chunk merged: %u chunk (%u images) -> %u chunk (%u images)",
-			cSmall, chunkSmall.images.size(), idxBestChunk, chunkLarge.images.size());
-		chunkLarge.aabb.Insert(chunkSmall.aabb);
-		chunkLarge.images.insert(chunkSmall.images.begin(), chunkSmall.images.end());
-		chunks.RemoveAt(cSmall);
+		#endif
+		return chunks.size();
+	};
+	unsigned numChunks;
+	if (maxNumCameras > 0) {
+		// find the largest sampling area budget such that no sub-scene contains more than the given number of cameras
+		double totalArea(0);
+		FOREACH(i, areas)
+			totalArea += areas[i];
+		if (numValidImages <= maxNumCameras) {
+			numChunks = Partition((float)totalArea, chunks);
+		} else {
+			const auto MaxChunkCameras = [&chunks]() {
+				unsigned maxCameras(0);
+				FOREACH(c, chunks)
+					maxCameras = MAXF(maxCameras, (unsigned)chunks[c].images.size());
+				return maxCameras;
+			};
+			float lo(0.f), hi((float)totalArea);
+			float bestFeasibleArea(0.f), bestEffortArea((float)totalArea);
+			unsigned bestEffortCameras(numValidImages);
+			for (int iter=0; iter<16; ++iter) {
+				const float midArea((lo+hi)*0.5f);
+				const unsigned n(Partition(midArea, chunks));
+				const unsigned maxCameras(n > 0 ? MaxChunkCameras() : numValidImages);
+				if (n >= 2 && maxCameras <= maxNumCameras) {
+					// feasible split, try a larger area budget
+					bestFeasibleArea = midArea;
+					lo = midArea;
+				} else {
+					hi = midArea;
+					if (bestEffortCameras > maxCameras) {
+						bestEffortCameras = maxCameras;
+						bestEffortArea = midArea;
+					}
+				}
+			}
+			if (bestFeasibleArea <= 0) {
+				DEBUG_EXTRA("warning: can not split the scene such that no sub-scene exceeds %u cameras; achieved %u cameras", maxNumCameras, bestEffortCameras);
+				bestFeasibleArea = bestEffortArea;
+			}
+			numChunks = Partition(bestFeasibleArea, chunks);
+		}
+	} else {
+		numChunks = Partition(maxArea, chunks);
 	}
-	#endif
+	if (numChunks == 0)
+		return 0;
 	if (IsBounded()) {
 		// make sure the chunks bounding box do not exceed the scene bounding box
 		const AABB3f aabb(obb.GetAABB());
@@ -1814,7 +1871,10 @@ unsigned Scene::Split(ImagesChunkArr& chunks, float maxArea, int depthMapStep) c
 			}
 		}
 	}
-	DEBUG_EXTRA("Scene split (%g max-area): %u chunks (%s)", maxArea, chunks.size(), TD_TIMER_GET_FMT().c_str());
+	unsigned maxChunkCameras(0);
+	FOREACH(c, chunks)
+		maxChunkCameras = MAXF(maxChunkCameras, (unsigned)chunks[c].images.size());
+	DEBUG_EXTRA("Scene split (%g max-area, %u max-cameras): %u chunks, %u max cameras per chunk (%s)", maxArea, maxNumCameras, chunks.size(), maxChunkCameras, TD_TIMER_GET_FMT().c_str());
 	#if 0 || defined(_DEBUG)
 	// dump chunks for visualization
 	FOREACH(c, chunks) {
