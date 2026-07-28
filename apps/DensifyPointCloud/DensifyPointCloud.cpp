@@ -380,7 +380,7 @@ int main(int argc, LPCTSTR* argv)
 		const String baseFileName(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName)));
 		if (!OPT::strPointCloudFileName.empty() && (ARCHIVE_TYPE)OPT::nArchiveType == ARCHIVE_MVS) {
 			// save only the cropped dense point-cloud
-			scene.pointcloud.Save(baseFileName+_T(".ply"), true);
+			scene.pointcloud.Save(baseFileName+_T(".ply"), true, false, true, &scene.images);
 		} else {
 			// save the cropped scene
 			scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
@@ -454,7 +454,7 @@ int main(int argc, LPCTSTR* argv)
 			// save scene and export point-cloud containing only points with N+ views
 			scene.pointcloud.RemoveMinViews((IIndex)-OPT::nExportNumViews);
 			scene.Save(baseFileName+_T(".mvs"), (ARCHIVE_TYPE)OPT::nArchiveType);
-			scene.pointcloud.Save(baseFileName+_T(".ply"));
+			scene.pointcloud.Save(baseFileName+_T(".ply"), false, false, true, &scene.images);
 		}
 		return EXIT_SUCCESS;
 	}
@@ -522,7 +522,7 @@ int main(int argc, LPCTSTR* argv)
 
 	// save the final point-cloud
 	const String baseFileName(MAKE_PATH_SAFE(Util::getFileFullName(OPT::strOutputFileName)));
-	scene.pointcloud.Save(baseFileName+_T(".ply"), (ARCHIVE_TYPE)OPT::nArchiveType == ARCHIVE_MVS);
+	scene.pointcloud.Save(baseFileName+_T(".ply"), (ARCHIVE_TYPE)OPT::nArchiveType == ARCHIVE_MVS, false, true, &scene.images);
 	#if TD_VERBOSE != TD_VERBOSE_OFF
 	if (VERBOSITY_LEVEL > 2)
 		scene.ExportCamerasMLP(baseFileName+_T(".mlp"), baseFileName+_T(".ply"));

@@ -273,7 +273,7 @@ namespace BasicPLY {
 				ply.setup_property(props[p]);
 				switch (p) {
 				case 0: points.resize((IDX)elem_count); break;
-				case 3: case 13: colors.resize((IDX)elem_count); break;
+				case 3: colors.resize((IDX)elem_count); break;
 				case 6: normals.resize((IDX)elem_count); break;
 				case 9: views.resize((IDX)elem_count); break;
 				case 10: weights.resize((IDX)elem_count); break;
@@ -295,8 +295,8 @@ namespace BasicPLY {
 			// 	ply.describe_property(elem_names[0], props[10]);
 			// if (bConfidence)
 			// 	ply.describe_property(elem_names[0], props[11]);
-			// if (bScale) // ODM: always output "value" in PLY
-				ply.describe_property(elem_names[0], props[10]);
+			// if (bScale)
+				// ply.describe_property(elem_names[0], props[10]);
 			if (elem_count)
 				ply.element_count(elem_names[0], elem_count);
 		}
@@ -316,7 +316,7 @@ namespace BasicPLY {
 		//{"view_indices",  PLY::Uint32,  PLY::Uint32,  offsetof(Vertex,views.pIndices), 1, PLY::Uint8, PLY::Uint8, offsetof(Vertex,views.num)},
 		//{"view_weights",  PLY::Float32, PLY::Float32, offsetof(Vertex,views.pWeights), 1, PLY::Uint8, PLY::Uint8, offsetof(Vertex,views.num)},
 		//{"confidence",    PLY::Float32, PLY::Float32, offsetof(Vertex,confidence), 0, 0, 0, 0},
-		{"value",         PLY::Float32, PLY::Float32, offsetof(Vertex,scale), 0, 0, 0, 0}
+		// {"value",         PLY::Float32, PLY::Float32, offsetof(Vertex,scale), 0, 0, 0, 0}
 		// duplicates
 		//{"diffuse_red",   PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.r), 0, 0, 0, 0},
 		//{"diffuse_green", PLY::Uint8,   PLY::Uint8,   offsetof(Vertex,c.g), 0, 0, 0, 0},
@@ -404,15 +404,16 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 
 	// export the array of 3D points
 	BasicPLY::Vertex vertex;
+	vertex.views.num = 0;
 	FOREACH(i, points) {
 		// export the vertex position, color, normal and views
 		vertex.p = points[i];
 
-		// ODM: multiply normals by confidence
+		// ODM: compute the point scale and the confidence used to scale the normals
 		float conf = 0.0f;
-
-		if (!normals.empty()){
-			if (!pointWeights.empty() && images != nullptr) {
+		vertex.scale = 0.0f;
+		if (images != nullptr && !pointViews.empty()) {
+			if (!pointWeights.empty()) {
 				float scaleWeightBest = FLT_MAX;
 				FOREACH(j, pointViews[i]) {
 					const IIndex idxView = pointViews[i][j];
@@ -422,10 +423,21 @@ bool PointCloud::Save(const String& fileName, bool bViews, bool bLegacyTypes, bo
 					const float scaleWeight(scale/vConf);
 					if (scaleWeightBest > scaleWeight) {
 						scaleWeightBest = scaleWeight;
+						vertex.scale = scale;
 						conf = vConf;
 					}
 				}
-			}
+			} 
+			// else { // Note: enable this if you need scale
+			// 	vertex.scale = FLT_MAX;
+			// 	for (IIndex idxView: pointViews[i]) {
+			// 		const float scale((float)(*images)[idxView].camera.GetFootprintWorld(Cast<REAL>(vertex.p)));
+			// 		if (vertex.scale > scale)
+			// 			vertex.scale = scale;
+			// 	}
+			// 	if (vertex.scale == FLT_MAX)
+			// 		vertex.scale = 0.0f;
+			// }
 		}
 
 		if (std::isnan(conf) || conf < 0.0f) {
@@ -542,6 +554,7 @@ bool PointCloud::SaveWithScale(const String& fileName, const ImageArr& images, f
 	FOREACH(i, points) {
 		// export the vertex position, normal and scale
 		vertex.p = points[i];
+		vertex.views.num = (uint8_t)pointViews[i].size();
 		if (!colors.empty())
 			vertex.c = colors[i];
 		if (!normals.empty())
