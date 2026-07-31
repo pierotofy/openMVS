@@ -2468,6 +2468,19 @@ void Scene::PointCloudFilter(int thRemove)
 {
 	TD_TIMER_STARTD();
 
+	// refuse to process a point-cloud with inconsistent per-point arrays;
+	// RemovePoint() would read/free memory past the end of the shorter arrays
+	if (pointcloud.pointViews.size() != pointcloud.points.size() ||
+		(!pointcloud.pointWeights.empty() && pointcloud.pointWeights.size() != pointcloud.points.size()) ||
+		(!pointcloud.normals.empty() && pointcloud.normals.size() != pointcloud.points.size()) ||
+		(!pointcloud.colors.empty() && pointcloud.colors.size() != pointcloud.points.size()) ||
+		(!pointcloud.labels.empty() && pointcloud.labels.size() != pointcloud.points.size())) {
+		VERBOSE("error: cannot filter point-cloud with inconsistent attribute arrays (%u points, %u views, %u weights, %u normals, %u colors, %u labels)",
+			pointcloud.points.size(), pointcloud.pointViews.size(), pointcloud.pointWeights.size(),
+			pointcloud.normals.size(), pointcloud.colors.size(), pointcloud.labels.size());
+		return;
+	}
+
 	typedef TOctree<PointCloud::PointArr,PointCloud::Point::Type,3,uint32_t> Octree;
 	struct Collector {
 		typedef Octree::IDX_TYPE IDX;
@@ -2549,6 +2562,8 @@ void Scene::PointCloudFilter(int thRemove)
 		const PointCloud::Point& X = pointcloud.points[idxPoint];
 		const PointCloud::ViewArr& views = pointcloud.pointViews[idxPoint];
 		for (PointCloud::View idxView: views) {
+			if (idxView >= collectors.size())
+				continue;
 			Collector& collector = collectors[idxView];
 			#ifdef DENSE_USE_OPENMP
 			Lock l(collector.GetCS());

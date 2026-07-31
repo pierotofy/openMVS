@@ -275,9 +275,6 @@ namespace BasicPLY {
 				case 0: points.resize((IDX)elem_count); break;
 				case 3: colors.resize((IDX)elem_count); break;
 				case 6: normals.resize((IDX)elem_count); break;
-				case 9: views.resize((IDX)elem_count); break;
-				case 10: weights.resize((IDX)elem_count); break;
-				case 11: labels.resize((IDX)elem_count); break;
 				}
 			}
 		}
@@ -300,9 +297,9 @@ namespace BasicPLY {
 			if (elem_count)
 				ply.element_count(elem_names[0], elem_count);
 		}
-		static const PLY::PlyProperty props[11];
+		static const PLY::PlyProperty props[10];
 	};
-	const PLY::PlyProperty Vertex::props[11] = {
+	const PLY::PlyProperty Vertex::props[10] = {
 		{"x",             PLY::Float32, PLY::Float32, offsetof(Vertex,p.x), 0, 0, 0, 0},
 		{"y",             PLY::Float32, PLY::Float32, offsetof(Vertex,p.y), 0, 0, 0, 0},
 		{"z",             PLY::Float32, PLY::Float32, offsetof(Vertex,p.z), 0, 0, 0, 0},
@@ -347,7 +344,7 @@ bool PointCloud::Load(const String& fileName)
 		LPCSTR elem_name = ply.setup_element_read(i, &elem_count);
 		if (PLY::equal_strings(BasicPLY::elem_names[0], elem_name)) {
 			BasicPLY::Vertex::InitLoadProps(ply, elem_count, points, colors, normals, labels, pointViews, pointWeights);
-			BasicPLY::Vertex vertex;
+			BasicPLY::Vertex vertex = {};
 			for (int v=0; v<elem_count; ++v) {
 				ply.get_element(&vertex);
 				points[v] = vertex.p;
@@ -357,14 +354,6 @@ bool PointCloud::Load(const String& fileName)
 					normals[v] = vertex.n;
 				if (!labels.empty())
 					labels[v] = vertex.label;
-				if (!pointViews.empty()) {
-					ViewArr pv(vertex.views.num, vertex.views.pIndices);
-					pointViews[v].CopyOfRemove(pv);
-				}
-				if (!pointWeights.empty()){
-					WeightArr pw(vertex.views.num, vertex.views.pWeights);
-					pointWeights[v].CopyOfRemove(pw);
-				}
 			}
 		} else {
 			ply.get_other_element();

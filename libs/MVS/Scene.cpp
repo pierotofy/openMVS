@@ -2690,18 +2690,40 @@ void Scene::InitTowerScene(const int towerMode)
 	mesh.Release();
 
 	const auto AppendPointCloud = [this](const PointCloud& towerPC) {
-		bool bHasNormal(towerPC.normals.size() == towerPC.GetSize());
-		bool bHasColor(towerPC.colors.size() == towerPC.GetSize());
-		bool bHasWeights(towerPC.pointWeights.size() == towerPC.GetSize());
+		// append only the attribute arrays the destination point-cloud uses, padding
+		// with defaults when the tower point-cloud lacks them; every per-point array
+		// must end up the same size as points or RemovePoint() reads/frees past its end
+		const bool bDstEmpty(pointcloud.points.empty());
+		const bool bSrcViews(towerPC.pointViews.size() == towerPC.GetSize());
+		const bool bSrcNormal(towerPC.normals.size() == towerPC.GetSize());
+		const bool bSrcColor(towerPC.colors.size() == towerPC.GetSize());
+		const bool bSrcWeights(towerPC.pointWeights.size() == towerPC.GetSize());
+		const bool bViews(bDstEmpty ? bSrcViews : !pointcloud.pointViews.empty());
+		const bool bNormal(bDstEmpty ? bSrcNormal : !pointcloud.normals.empty());
+		const bool bColor(bDstEmpty ? bSrcColor : !pointcloud.colors.empty());
+		const bool bWeights(bDstEmpty ? bSrcWeights : !pointcloud.pointWeights.empty());
+		const bool bLabels(!bDstEmpty && !pointcloud.labels.empty());
 		FOREACH(idxPoint, towerPC.points) {
 			pointcloud.points.emplace_back(towerPC.points[idxPoint]);
-			pointcloud.pointViews.emplace_back(towerPC.pointViews[idxPoint]);
-			if (bHasNormal)
-				pointcloud.normals.emplace_back(towerPC.normals[idxPoint]);
-			if (bHasColor)
-				pointcloud.colors.emplace_back(towerPC.colors[idxPoint]);
-			if (bHasWeights)
-				pointcloud.pointWeights.emplace_back(towerPC.pointWeights[idxPoint]);
+			if (bViews)
+				pointcloud.pointViews.emplace_back(bSrcViews ? towerPC.pointViews[idxPoint] : PointCloud::ViewArr());
+			if (bNormal)
+				pointcloud.normals.emplace_back(bSrcNormal ? towerPC.normals[idxPoint] : PointCloud::Normal(0,0,1));
+			if (bColor)
+				pointcloud.colors.emplace_back(bSrcColor ? towerPC.colors[idxPoint] : Pixel8U::WHITE);
+			if (bWeights) {
+				PointCloud::WeightArr& weights = pointcloud.pointWeights.emplace_back();
+				if (bSrcWeights) {
+					weights = towerPC.pointWeights[idxPoint];
+				} else if (bSrcViews) {
+					// default weight per view, so weights stay aligned with views
+					const PointCloud::ViewArr& views = towerPC.pointViews[idxPoint];
+					FOREACH(j, views)
+						weights.emplace_back(1.f);
+				}
+			}
+			if (bLabels)
+				pointcloud.labels.emplace_back(0);
 		}
 	};
 
