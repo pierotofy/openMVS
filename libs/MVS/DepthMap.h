@@ -358,6 +358,9 @@ struct MVS_API DepthEstimator {
 	#if DENSE_SMOOTHNESS == DENSE_SMOOTHNESS_PLANE
 	Planef plane; // plane defined by current depth and normal estimate
 	#endif
+	#if DENSE_SMOOTHNESS != DENSE_SMOOTHNESS_NA
+	float smoothFactor; // smoothness bonus for the current hypothesis (image independent, computed once per ScorePixel)
+	#endif
 	DepthMap& depthMap0;
 	NormalMap& normalMap0;
 	ConfidenceMap& confMap0;

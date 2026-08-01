@@ -551,17 +551,8 @@ float DepthEstimator::ScorePixelImage(const DepthData::ViewData& image1, Depth d
 	const float ncc(CLAMP(num/SQRT(nrmSq), -1.f, 1.f));
 	float score(1.f-ncc);
 	#if DENSE_SMOOTHNESS != DENSE_SMOOTHNESS_NA
-	// encourage smoothness
-	for (const NeighborEstimate& neighbor: neighborsClose) {
-		ASSERT(neighbor.depth > 0);
-		#if DENSE_SMOOTHNESS == DENSE_SMOOTHNESS_PLANE
-		const float factorDepth(DENSE_EXP(SQUARE(plane.Distance(neighbor.X)/depth) * smoothSigmaDepth));
-		#else
-		const float factorDepth(DENSE_EXP(SQUARE((depth-neighbor.depth)/depth) * smoothSigmaDepth));
-		#endif
-		const float factorNormal(DENSE_EXP(SQUARE(ACOS(ComputeAngle(normal.ptr(), neighbor.normal.ptr()))) * smoothSigmaNormal));
-		score *= (1.f - smoothBonusDepth * factorDepth) * (1.f - smoothBonusNormal * factorNormal);
-	}
+	// encourage smoothness (factor computed once per hypothesis in ScorePixel)
+	score *= smoothFactor;
 	#endif
 	if (!image1.depthMap.empty()) {
 		ASSERT(OPTDENSE::fEstimationGeometricWeight > 0);
@@ -598,6 +589,20 @@ float DepthEstimator::ScorePixelImage(const DepthData::ViewData& image1, Depth d
 float DepthEstimator::ScorePixel(Depth depth, const Normal& normal)
 {
 	ASSERT(depth > 0 && normal.dot(Cast<float>(X0)) <= 0);
+	#if DENSE_SMOOTHNESS != DENSE_SMOOTHNESS_NA
+	// compute the smoothness bonus once, as it does not depend on the target image
+	smoothFactor = 1.f;
+	for (const NeighborEstimate& neighbor: neighborsClose) {
+		ASSERT(neighbor.depth > 0);
+		#if DENSE_SMOOTHNESS == DENSE_SMOOTHNESS_PLANE
+		const float factorDepth(DENSE_EXP(SQUARE(plane.Distance(neighbor.X)/depth) * smoothSigmaDepth));
+		#else
+		const float factorDepth(DENSE_EXP(SQUARE((depth-neighbor.depth)/depth) * smoothSigmaDepth));
+		#endif
+		const float factorNormal(DENSE_EXP(SQUARE(ACOS(ComputeAngle(normal.ptr(), neighbor.normal.ptr()))) * smoothSigmaNormal));
+		smoothFactor *= (1.f - smoothBonusDepth * factorDepth) * (1.f - smoothBonusNormal * factorNormal);
+	}
+	#endif
 	// compute score for this pixel as seen in each view
 	ASSERT(scores.size() == images.size());
 	FOREACH(idxView, images)

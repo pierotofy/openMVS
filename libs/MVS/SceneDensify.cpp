@@ -2539,7 +2539,7 @@ void Scene::PointCloudFilter(int thRemove)
 
 	// create octree to speed-up search
 	Octree octree(pointcloud.points, [](Octree::IDX_TYPE size, Octree::Type /*radius*/) {
-		return size > 128;
+		return size > 16;
 	});
 	IntArr visibility(pointcloud.GetSize()); visibility.Memset(0);
 	Collectors collectors; collectors.reserve(images.size());
